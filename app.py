@@ -639,6 +639,54 @@ if page == "🛡 Guardrails":
     st.success(
         "✅ Guardrails Updated"
     )
+    st.divider()
+
+# =====================================
+# GUARDRAIL ANALYTICS
+# =====================================
+guardrail_rows = conn.table(
+    "guardrail_events"
+).select("*").execute()
+
+if guardrail_rows.data:
+
+    guardrail_df = pd.DataFrame(
+        guardrail_rows.data
+    )
+
+    st.metric(
+        "Total Guardrail Events",
+        len(guardrail_df)
+    )
+
+    st.subheader(
+        "📊 Guardrail Distribution"
+    )
+
+    guardrail_counts = (
+        guardrail_df[
+            "guardrail_type"
+        ].value_counts()
+    )
+
+    st.bar_chart(
+        guardrail_counts
+    )
+
+    st.subheader(
+        "📝 Recent Guardrail Events"
+    )
+
+    st.dataframe(
+        guardrail_df.tail(10),
+        width="stretch"
+    )
+
+else:
+
+    st.info(
+        "No guardrail events yet."
+    )
 
 # =================================================
 # HITL REVIEW
