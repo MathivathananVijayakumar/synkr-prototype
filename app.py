@@ -90,9 +90,6 @@ Rules:
 # =================================================
 # SESSION STATE
 # =================================================
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
 if "guardrails" not in st.session_state:
 
     st.session_state.guardrails = {
@@ -118,7 +115,7 @@ page = st.sidebar.radio(
 )
 
 # =================================================
-# SCREEN 1 — RETRO ANALYSIS
+# RETRO ANALYSIS
 # =================================================
 if page == "🏠 Retro Analysis":
 
@@ -186,7 +183,7 @@ if page == "🏠 Retro Analysis":
         )
 
     # -------------------------------------------------
-    # ANALYZE BUTTON
+    # ANALYZE
     # -------------------------------------------------
     if st.button("Analyze Feedback"):
 
@@ -200,21 +197,19 @@ if page == "🏠 Retro Analysis":
 
                     start_time = time.time()
 
-                    messages = [
-                        {
-                            "role": "system",
-                            "content": system_prompt
-                        },
-                        {
-                            "role": "user",
-                            "content": retro_text
-                        }
-                    ]
-
                     completion = (
                         client.chat.completions.create(
                             model="llama-3.1-8b-instant",
-                            messages=messages,
+                            messages=[
+                                {
+                                    "role": "system",
+                                    "content": system_prompt
+                                },
+                                {
+                                    "role": "user",
+                                    "content": retro_text
+                                }
+                            ],
                             temperature=0.4,
                             max_tokens=1024
                         )
@@ -255,9 +250,6 @@ if page == "🏠 Retro Analysis":
                         "override_flag": False
                     }).execute()
 
-                    # -----------------------------------------
-                    # AI RESPONSE
-                    # -----------------------------------------
                     st.success(
                         "✅ Analysis Complete"
                     )
@@ -284,9 +276,6 @@ if page == "🏠 Retro Analysis":
                             confidence = 75
                             theme = "General"
 
-                            # ---------------------------------
-                            # SENTIMENT LOGIC
-                            # ---------------------------------
                             if any(
                                 word in item_lower
                                 for word in positive_keywords
@@ -313,9 +302,6 @@ if page == "🏠 Retro Analysis":
 
                             with st.container(border=True):
 
-                                # -----------------------------
-                                # CONFIDENCE STATUS
-                                # -----------------------------
                                 if confidence >= threshold:
 
                                     st.success(
@@ -365,7 +351,7 @@ if page == "🏠 Retro Analysis":
                     st.error(f"AI Error: {e}")
 
 # =================================================
-# SCREEN 2 — TEAM DASHBOARD
+# TEAM DASHBOARD
 # =================================================
 if page == "📊 Team Dashboard":
 
@@ -437,36 +423,96 @@ if page == "📊 Team Dashboard":
 
             st.divider()
 
-            st.subheader("📈 Sprint Trends")
+            # -------------------------------------------------
+            # DYNAMIC SENTIMENT TRENDS
+            # -------------------------------------------------
+            st.subheader("📈 Sentiment Trends")
 
-            chart_data = pd.DataFrame({
-                "Sprint": [
-                    "Sprint 21",
-                    "Sprint 22",
-                    "Sprint 23"
-                ],
-                "Positive": [60, 68, 72],
-                "Negative": [30, 22, 18]
-            })
+            sentiment_data = []
 
-            st.line_chart(
-                chart_data.set_index("Sprint")
+            for index, row in df.iterrows():
+
+                content = str(
+                    row["content"]
+                ).lower()
+
+                positive_score = 0
+                negative_score = 0
+
+                if any(
+                    word in content
+                    for word in positive_keywords
+                ):
+                    positive_score += 1
+
+                if any(
+                    word in content
+                    for word in negative_keywords
+                ):
+                    negative_score += 1
+
+                sentiment_data.append({
+                    "Message": index + 1,
+                    "Positive": positive_score,
+                    "Negative": negative_score
+                })
+
+            chart_data = pd.DataFrame(
+                sentiment_data
             )
 
+            if not chart_data.empty:
+
+                st.line_chart(
+                    chart_data.set_index("Message")
+                )
+
+            # -------------------------------------------------
+            # DYNAMIC THEME DISTRIBUTION
+            # -------------------------------------------------
             st.subheader("📊 Theme Distribution")
 
-            theme_data = pd.DataFrame({
-                "Theme": [
-                    "Communication",
-                    "Deployment",
-                    "Planning",
-                    "Testing"
-                ],
-                "Count": [8, 6, 4, 3]
+            theme_counts = {
+                "Communication": 0,
+                "Deployment": 0,
+                "Planning": 0,
+                "Testing": 0,
+                "Team Health": 0
+            }
+
+            for content in df["content"]:
+
+                text = str(content).lower()
+
+                if "deploy" in text:
+                    theme_counts["Deployment"] += 1
+
+                if "communicat" in text:
+                    theme_counts["Communication"] += 1
+
+                if "plan" in text:
+                    theme_counts["Planning"] += 1
+
+                if "test" in text:
+                    theme_counts["Testing"] += 1
+
+                if any(
+                    word in text
+                    for word in burnout_keywords
+                ):
+                    theme_counts["Team Health"] += 1
+
+            theme_df = pd.DataFrame({
+                "Theme": list(
+                    theme_counts.keys()
+                ),
+                "Count": list(
+                    theme_counts.values()
+                )
             })
 
             st.bar_chart(
-                theme_data.set_index("Theme")
+                theme_df.set_index("Theme")
             )
 
             st.subheader(
@@ -491,7 +537,7 @@ if page == "📊 Team Dashboard":
         )
 
 # =================================================
-# SCREEN 3 — GUARDRAILS
+# GUARDRAILS
 # =================================================
 if page == "🛡 Guardrails":
 
@@ -540,34 +586,12 @@ if page == "🛡 Guardrails":
 
     st.divider()
 
-    st.subheader("Active Protections")
-
-    if named_detection:
-        st.info(
-            "👤 Named individual detection enabled"
-        )
-
-    if burnout_detection:
-        st.info(
-            "🔥 Burnout detection enabled"
-        )
-
-    if sensitive_hr:
-        st.info(
-            "⚠ Sensitive HR filtering enabled"
-        )
-
-    st.warning(
-        f"AI outputs below "
-        f"{confidence_threshold}% confidence "
-        f"require Scrum Master review."
-    )
-
     st.subheader("Risk Detection Preview")
 
     sample_text = st.text_area(
         "Test guardrails with sample retro feedback",
-        height=120
+        height=120,
+        key="guardrail_test"
     )
 
     if sample_text:
@@ -605,7 +629,7 @@ if page == "🛡 Guardrails":
                 )
 
 # =================================================
-# SCREEN 4 — HITL REVIEW
+# HITL REVIEW
 # =================================================
 if page == "🧠 HITL Review":
 
@@ -676,8 +700,6 @@ if page == "🧠 HITL Review":
                                 ai_theme
                             )
 
-                            st.divider()
-
                             corrected_sentiment = (
                                 st.selectbox(
                                     "Correct Sentiment",
@@ -687,21 +709,6 @@ if page == "🧠 HITL Review":
                                         "Negative"
                                     ],
                                     key=f"sent_{index}"
-                                )
-                            )
-
-                            corrected_theme = (
-                                st.selectbox(
-                                    "Correct Theme",
-                                    [
-                                        "Communication",
-                                        "Deployment",
-                                        "Planning",
-                                        "Testing",
-                                        "Team Health",
-                                        "Delivery"
-                                    ],
-                                    key=f"theme_{index}"
                                 )
                             )
 
@@ -742,7 +749,7 @@ if page == "🧠 HITL Review":
         )
 
 # =================================================
-# SCREEN 5 — FEEDBACK SURVEY
+# FEEDBACK SURVEY
 # =================================================
 if page == "📝 Feedback Survey":
 
@@ -776,7 +783,7 @@ if page == "📝 Feedback Survey":
         )
 
 # =================================================
-# SCREEN 6 — ADMIN DASHBOARD
+# ADMIN DASHBOARD
 # =================================================
 if page == "⚙ Admin Dashboard":
 
@@ -846,8 +853,6 @@ if page == "⚙ Admin Dashboard":
                 f"{hallucination_rate}%"
             )
 
-            st.divider()
-
             st.success(
                 f"Pilot Teams Active: {active_teams}"
             )
@@ -868,20 +873,10 @@ if page == "⚙ Admin Dashboard":
                     "⚠ Override rate too high"
                 )
 
-            st.warning(
-                "Monitor hallucination spikes "
-                "and override rates"
-            )
-
-            if st.button("🔴 DISABLE AI"):
-
-                st.error("AI Disabled")
-
         else:
 
             st.info(
-                "No AI metrics available yet. "
-                "Run sprint analysis first."
+                "No AI metrics available yet."
             )
 
     except Exception as e:
