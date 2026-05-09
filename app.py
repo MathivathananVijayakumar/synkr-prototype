@@ -215,10 +215,6 @@ Feedback:
 
                     st.divider()
 
-                    st.subheader(
-                        "📋 AI Feedback Analysis"
-                    )
-
                     for item in items:
 
                         feedback = item["feedback"]
@@ -453,30 +449,6 @@ Feedback:
 
                     if "Connection" in error_message:
 
-                        conn.table(
-                            "guardrail_events"
-                        ).insert({
-
-                            "sprint_name":
-                            sprint_name,
-
-                            "team_name":
-                            team_name,
-
-                            "feedback":
-                            retro_text,
-
-                            "guardrail_type":
-                            "Sync Failure",
-
-                            "severity":
-                            "High",
-
-                            "reviewer_required":
-                            True
-
-                        }).execute()
-
                         st.error(
                             "🔄 Sync failure detected"
                         )
@@ -485,30 +457,6 @@ Feedback:
                         "API" in error_message
                         or "429" in error_message
                     ):
-
-                        conn.table(
-                            "guardrail_events"
-                        ).insert({
-
-                            "sprint_name":
-                            sprint_name,
-
-                            "team_name":
-                            team_name,
-
-                            "feedback":
-                            retro_text,
-
-                            "guardrail_type":
-                            "API Failure",
-
-                            "severity":
-                            "High",
-
-                            "reviewer_required":
-                            True
-
-                        }).execute()
 
                         st.error(
                             "🚨 AI API failure detected"
@@ -691,52 +639,6 @@ if page == "🛡 Guardrails":
     st.success(
         "✅ Guardrails Updated"
     )
-
-    st.divider()
-
-    guardrail_rows = conn.table(
-        "guardrail_events"
-    ).select("*").execute()
-
-    if guardrail_rows.data:
-
-        guardrail_df = pd.DataFrame(
-            guardrail_rows.data
-        )
-
-        st.metric(
-            "Total Guardrail Events",
-            len(guardrail_df)
-        )
-
-        st.subheader(
-            "📊 Guardrail Distribution"
-        )
-
-        guardrail_counts = (
-            guardrail_df[
-                "guardrail_type"
-            ].value_counts()
-        )
-
-        st.bar_chart(
-            guardrail_counts
-        )
-
-        st.subheader(
-            "📝 Recent Guardrail Events"
-        )
-
-        st.dataframe(
-            guardrail_df.tail(10),
-            width="stretch"
-        )
-
-    else:
-
-        st.info(
-            "No guardrail events yet."
-        )
 
 # =================================================
 # HITL REVIEW
@@ -973,18 +875,12 @@ if page == "⚙ Admin Dashboard":
             df["team_name"].nunique()
         )
 
-        # =====================================
-        # SUCCESS METRICS
-        # =====================================
         st.subheader(
             "📊 Success Metrics"
         )
 
         col1, col2, col3 = st.columns(3)
 
-        # =====================================
-        # COLUMN 1
-        # =====================================
         with col1:
 
             st.metric(
@@ -1002,9 +898,6 @@ if page == "⚙ Admin Dashboard":
                 f"{acceptance_rate}%"
             )
 
-        # =====================================
-        # COLUMN 2
-        # =====================================
         with col2:
 
             st.metric(
@@ -1022,9 +915,6 @@ if page == "⚙ Admin Dashboard":
                 f"{repeat_usage}%"
             )
 
-        # =====================================
-        # COLUMN 3
-        # =====================================
         with col3:
 
             st.metric(
@@ -1044,16 +934,10 @@ if page == "⚙ Admin Dashboard":
 
         st.divider()
 
-        # =====================================
-        # GOVERNANCE STATUS
-        # =====================================
         st.success(
             "Real-time governance monitoring enabled."
         )
 
-        # =====================================
-        # CONFIDENCE TREND
-        # =====================================
         st.subheader(
             "📈 AI Confidence Trend"
         )
@@ -1069,9 +953,6 @@ if page == "⚙ Admin Dashboard":
             confidence_df
         )
 
-        # =====================================
-        # LATENCY TREND
-        # =====================================
         st.subheader(
             "⚡ API Latency Trend"
         )
@@ -1095,9 +976,6 @@ if page == "⚙ Admin Dashboard":
 
     st.divider()
 
-    # =====================================
-    # AI KILL SWITCH
-    # =====================================
     st.subheader(
         "🚨 Emergency AI Controls"
     )
@@ -1136,107 +1014,6 @@ if page == "⚙ Admin Dashboard":
 
             st.session_state.ai_enabled = True
 
-
-  
-
-    if rows.data:
-
-        df = pd.DataFrame(rows.data)
-
-        total = len(df)
-
-        avg_confidence = round(
-            df["confidence"].mean(),
-            1
-        )
-
-        avg_latency = round(
-            df["latency"].mean(),
-            2
-        )
-
-        hallucination_rate = round(
-            (
-                df["hallucination_flag"].sum()
-                / total
-            ) * 100,
-            1
-        )
-
-        acceptance_rate = 94
-        repeat_usage = 87
-
-        col1, col2, col3 = st.columns(3)
-
-        col1.metric(
-            "Model Accuracy",
-            f"{avg_confidence}%"
-        )
-
-        col1.metric(
-            "Hallucination Rate",
-            f"{hallucination_rate}%"
-        )
-
-        col2.metric(
-            "Acceptance Rate",
-            f"{acceptance_rate}%"
-        )
-
-        col2.metric(
-            "Repeat Usage",
-            f"{repeat_usage}%"
-        )
-
-        col3.metric(
-            "Avg Latency",
-            f"{avg_latency}s"
-        )
-
-        col3.metric(
-            "Compliance",
-            "100%"
-        )
-
-        st.divider()
-
-        st.subheader(
-            "🚨 Emergency AI Controls"
-        )
-
-        if st.session_state.ai_enabled:
-
             st.success(
-                "AI Analysis System Active"
+                "AI System Reactivated"
             )
-
-            disable_clicked = st.button(
-                "🛑 DISABLE AI FOR ALL SESSIONS",
-                type="primary"
-            )
-
-            if disable_clicked:
-
-                st.session_state.ai_enabled = False
-
-                st.error(
-                    "AI paused. All users reverted to manual mode."
-                )
-
-        else:
-
-            st.error(
-                "AI System Disabled"
-            )
-
-            enable_clicked = st.button(
-                "✅ ENABLE AI"
-            )
-
-            if enable_clicked:
-
-                st.session_state.ai_enabled = True
-
-                st.success(
-                    "AI System Reactivated"
-                )
