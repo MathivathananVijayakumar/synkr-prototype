@@ -19,7 +19,7 @@ st.title("Synkr: Team Health Dashboard")
 
 # 2. Fetch Data from Supabase
 # ttl="10m" ensures data is cached for 10 minutes to save API calls
-rows = conn.query("*", table="retrospectives", ttl="10m").execute()
+rows = conn.table("retrospectives").select("*").execute()
 
 if rows.data:
     df = pd.DataFrame(rows.data)
