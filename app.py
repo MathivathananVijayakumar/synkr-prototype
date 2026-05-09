@@ -3,54 +3,59 @@ from st_supabase_connection import SupabaseConnection
 from groq import Groq
 import pandas as pd
 
-# 1. Initialize Connections
-# Pass credentials directly to the connection
-conn = st.connection(
-    "supabase", 
-    type=SupabaseConnection,
-    url=st.secrets["SUPABASE_URL"],
-    key=st.secrets["SUPABASE_KEY"]
-)
-
-# Also update your Groq client initialization to match the new secret name
+# 1. Setup
+conn = st.connection("supabase", type=SupabaseConnection, url=st.secrets["SUPABASE_URL"], key=st.secrets["SUPABASE_KEY"])
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-st.title("Synkr: Team Health Dashboard")
+st.title("Synkr: Sprint Retrospective Analyzer")
 
-# 2. Fetch Data from Supabase
-# ttl="10m" ensures data is cached for 10 minutes to save API calls
+# 2. THE SUMMARY SECTION (Slide 2: Team Sentiment Summary) [cite: 52]
+# Fetch latest data so the summary updates immediately after a submission
 rows = conn.table("retrospectives").select("*").execute()
 
 if rows.data:
     df = pd.DataFrame(rows.data)
+    st.subheader("Team Sentiment Summary") [cite: 52]
     
-    # 3. Display Sentiment Summary
-    st.subheader("Current Sprint Sentiment")
+    # Calculate percentages for Slide 2 targets [cite: 53, 54, 55]
+    counts = df['sentiment'].value_counts(normalize=True) * 100
     col1, col2, col3 = st.columns(3)
-    
-    # Count occurrences for the sentiment breakdown
-    sentiment_counts = df['sentiment'].value_counts()
-    col1.metric("Positive", f"{sentiment_counts.get('Positive', 0)}")
-    col2.metric("Neutral", f"{sentiment_counts.get('Neutral', 0)}")
-    col3.metric("Negative", f"{sentiment_counts.get('Negative', 0)}", delta_color="inverse")
+    col1.metric("Positive", f"{counts.get('Positive', 0):.0f}%") [cite: 53]
+    col2.metric("Neutral", f"{counts.get('Neutral', 0):.0f}%") [cite: 54]
+    col3.metric("Negative", f"{counts.get('Negative', 0):.0f}%") [cite: 55]
 
-    # 4. Actionable Insights Table
-    st.subheader("Risk Alerts & Themes")
-    st.dataframe(
-        df[['content', 'sentiment', 'theme', 'risk_level']],
-        column_config={
-            "risk_level": st.column_config.TextColumn("Risk Level", help="AI-identified burnout or delivery risks")
-        },
-        use_container_width=True
-    )
+    # Show the "Key Themes" and "Suggested Actions" (Slide 2) [cite: 56, 61]
+    st.dataframe(df[['content', 'sentiment', 'theme', 'risk_level']].tail(5)) 
 
-# 5. Add a New Retro Entry (Manual Input for Wizard of Oz)
-with st.expander("Submit New Retrospective Feedback"):
-    new_comment = st.text_area("What's on your mind?")
-    if st.button("Process with Synkr AI"):
-        # This calls Groq directly for real-time interaction
-        chat_completion = client.chat.completions.create(
-            messages=[{"role": "user", "content": f"Analyze: {new_comment}"}],
+st.divider()
+
+# 3. THE INPUT BOX (Step 1: Retro Submission) [cite: 233]
+# Using a form ensures the box resets and stays ready for the next "another one"
+with st.form("retro_input", clear_on_submit=True):
+    user_input = st.text_area("Add another retrospective comment:") [cite: 150, 234]
+    submitted = st.form_submit_button("Analyze & Save")
+
+    if submitted and user_input:
+        # Step 2: AI Processing (Slide 8) [cite: 235, 236]
+        response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
+            messages=[{
+                "role": "system", 
+                "content": "Analyze sentiment (Positive/Neutral/Negative) and Theme. Return JSON."
+            }, {"role": "user", "content": user_input}],
+            response_format={"type": "json_object"}
         )
-        st.write("AI Analysis:", chat_completion.choices[0].message.content)
+        
+        # Parse and Save to Supabase (Slide 5 Workflow) [cite: 120, 121]
+        import json
+        res = json.loads(response.choices[0].message.content)
+        
+        conn.table("retrospectives").insert({
+            "content": user_input,
+            "sentiment": res.get("sentiment"),
+            "theme": res.get("theme"),
+            "risk_level": "Medium" # Default for prototype
+        }).execute()
+        
+        st.success("Feedback added! The summary above has updated.")
+        st.rerun() # Forces the summary at the top to refresh immediately
