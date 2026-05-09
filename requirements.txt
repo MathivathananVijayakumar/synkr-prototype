@@ -2,3 +2,4 @@ streamlit
 groq
 st-supabase-connection
 pandas
+plotly

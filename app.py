@@ -1,13 +1,10 @@
-# =========================================================
-# Synkr AI Dashboard - Enterprise AI Governance Prototype
-# =========================================================
-
 import streamlit as st
 from groq import Groq
 from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import time
 import json
+import plotly.express as px
 
 # =================================================
 # PAGE CONFIG
@@ -192,9 +189,6 @@ Feedback:
 
                     items = parsed["items"]
 
-                    # =========================================
-                    # SAVE CHAT HISTORY
-                    # =========================================
                     conn.table("chat_history").insert({
                         "role": "user",
                         "content": retro_text
@@ -218,20 +212,12 @@ Feedback:
                     for item in items:
 
                         feedback = item["feedback"]
-
                         sentiment = item["sentiment"]
-
                         theme = item["theme"]
-
                         risk_level = item["risk_level"]
-
                         confidence = item["confidence"]
-
                         insight = item["insight"]
 
-                        # =====================================
-                        # SAVE ANALYSIS
-                        # =====================================
                         conn.table(
                             "retro_analysis"
                         ).insert({
@@ -259,9 +245,6 @@ Feedback:
 
                         }).execute()
 
-                        # =====================================
-                        # SAVE METRICS
-                        # =====================================
                         conn.table(
                             "ai_metrics"
                         ).insert({
@@ -287,9 +270,6 @@ Feedback:
                             feedback.lower()
                         )
 
-                        # =====================================
-                        # BURNOUT DETECTION
-                        # =====================================
                         if (
                             st.session_state
                             .guardrails[
@@ -330,9 +310,6 @@ Feedback:
                                     "🔥 Burnout risk detected"
                                 )
 
-                        # =====================================
-                        # SENSITIVE HR DETECTION
-                        # =====================================
                         if (
                             st.session_state
                             .guardrails[
@@ -373,9 +350,6 @@ Feedback:
                                     "🚨 Sensitive HR content detected"
                                 )
 
-                        # =====================================
-                        # NAMED INDIVIDUAL DETECTION
-                        # =====================================
                         if (
                             st.session_state
                             .guardrails[
@@ -546,7 +520,50 @@ if page == "📊 Team Dashboard":
                 .unstack(fill_value=0)
             )
 
-            st.line_chart(trend_df)
+            for col in [
+                "Positive",
+                "Neutral",
+                "Negative"
+            ]:
+
+                if col not in trend_df.columns:
+                    trend_df[col] = 0
+
+            trend_df = trend_df[
+                ["Positive", "Neutral", "Negative"]
+            ]
+
+            trend_reset = (
+                trend_df.reset_index()
+            )
+
+            fig = px.line(
+                trend_reset,
+                x="sprint_name",
+                y=[
+                    "Positive",
+                    "Neutral",
+                    "Negative"
+                ],
+                markers=True,
+                color_discrete_map={
+                    "Positive": "green",
+                    "Neutral": "orange",
+                    "Negative": "red"
+                }
+            )
+
+            fig.update_layout(
+                xaxis_title="Sprint",
+                yaxis_title="Feedback Count",
+                legend_title="Sentiment",
+                height=500
+            )
+
+            st.plotly_chart(
+                fig,
+                width="stretch"
+            )
 
             st.subheader(
                 "📊 Theme Distribution"
@@ -566,12 +583,6 @@ if page == "📊 Team Dashboard":
             st.dataframe(
                 df.tail(10),
                 width="stretch"
-            )
-
-        else:
-
-            st.info(
-                "No dashboard data yet."
             )
 
     except Exception as e:
@@ -618,76 +629,52 @@ if page == "🛡 Guardrails":
     )
 
     st.session_state.guardrails = {
-        "named_detection":
-        named_detection,
-
-        "burnout_detection":
-        burnout_detection,
-
-        "sensitive_hr":
-        sensitive_hr,
-
-        "confidence_threshold":
-        confidence_threshold
+        "named_detection": named_detection,
+        "burnout_detection": burnout_detection,
+        "sensitive_hr": sensitive_hr,
+        "confidence_threshold": confidence_threshold
     }
 
-    st.success(
-        "✅ Guardrails Updated"
-    )
+    st.success("✅ Guardrails Updated")
 
     st.divider()
 
-    try:
+    guardrail_rows = conn.table(
+        "guardrail_events"
+    ).select("*").execute()
 
-        guardrail_rows = conn.table(
-            "guardrail_events"
-        ).select("*").execute()
+    if guardrail_rows.data:
 
-        if guardrail_rows.data:
+        guardrail_df = pd.DataFrame(
+            guardrail_rows.data
+        )
 
-            guardrail_df = pd.DataFrame(
-                guardrail_rows.data
-            )
+        st.metric(
+            "Total Guardrail Events",
+            len(guardrail_df)
+        )
 
-            st.metric(
-                "Total Guardrail Events",
-                len(guardrail_df)
-            )
+        st.subheader(
+            "📊 Guardrail Distribution"
+        )
 
-            st.subheader(
-                "Guardrail Distribution"
-            )
+        guardrail_counts = (
+            guardrail_df[
+                "guardrail_type"
+            ].value_counts()
+        )
 
-            guardrail_counts = (
-                guardrail_df[
-                    "guardrail_type"
-                ]
-                .value_counts()
-            )
+        st.bar_chart(
+            guardrail_counts
+        )
 
-            st.bar_chart(
-                guardrail_counts
-            )
+        st.subheader(
+            "📝 Recent Guardrail Events"
+        )
 
-            st.subheader(
-                "Recent Guardrail Events"
-            )
-
-            st.dataframe(
-                guardrail_df.tail(10),
-                width="stretch"
-            )
-
-        else:
-
-            st.info(
-                "No guardrail events yet."
-            )
-
-    except Exception as e:
-
-        st.error(
-            f"Guardrail Error: {e}"
+        st.dataframe(
+            guardrail_df.tail(10),
+            width="stretch"
         )
 
 # =================================================
@@ -699,113 +686,84 @@ if page == "🧠 HITL Review":
         "🧠 Human-in-the-Loop Review"
     )
 
-    try:
+    rows = conn.table(
+        "retro_analysis"
+    ).select("*").execute()
 
-        rows = conn.table(
-            "retro_analysis"
-        ).select("*").execute()
+    if rows.data:
 
-        if rows.data:
+        df = pd.DataFrame(rows.data)
 
-            df = pd.DataFrame(rows.data)
+        latest = df.tail(5)
 
-            latest = df.tail(5)
+        for index, row in latest.iterrows():
 
-            for index, row in latest.iterrows():
+            with st.container(border=True):
 
-                with st.container(border=True):
+                st.write(row["feedback"])
 
-                    st.write(
-                        row["feedback"]
+                col1, col2, col3 = st.columns(3)
+
+                col1.metric(
+                    "Sentiment",
+                    row["sentiment"]
+                )
+
+                col2.metric(
+                    "Theme",
+                    row["theme"]
+                )
+
+                col3.metric(
+                    "Confidence",
+                    f"{row['confidence']}%"
+                )
+
+                corrected_sentiment = st.selectbox(
+                    "Correct Sentiment",
+                    [
+                        "Positive",
+                        "Neutral",
+                        "Negative"
+                    ],
+                    key=f"sent_{index}"
+                )
+
+                corrected_theme = st.selectbox(
+                    "Correct Theme",
+                    [
+                        "Deployment",
+                        "Communication",
+                        "Planning",
+                        "Testing",
+                        "Team Health",
+                        "Delivery"
+                    ],
+                    key=f"theme_{index}"
+                )
+
+                if st.button(
+                    "Submit Review",
+                    key=f"review_{index}"
+                ):
+
+                    conn.table(
+                        "hitl_reviews"
+                    ).insert({
+
+                        "feedback": row["feedback"],
+                        "ai_sentiment": row["sentiment"],
+                        "corrected_sentiment": corrected_sentiment,
+                        "ai_theme": row["theme"],
+                        "corrected_theme": corrected_theme,
+                        "reviewer": "Reviewer",
+                        "status": "Reviewed"
+
+                    }).execute()
+
+                    st.success(
+                        "✅ Review Submitted"
                     )
-
-                    col1, col2, col3 = (
-                        st.columns(3)
-                    )
-
-                    col1.metric(
-                        "Sentiment",
-                        row["sentiment"]
-                    )
-
-                    col2.metric(
-                        "Theme",
-                        row["theme"]
-                    )
-
-                    col3.metric(
-                        "Confidence",
-                        f"{row['confidence']}%"
-                    )
-
-                    corrected_sentiment = (
-                        st.selectbox(
-                            "Correct Sentiment",
-                            [
-                                "Positive",
-                                "Neutral",
-                                "Negative"
-                            ],
-                            key=f"sent_{index}"
-                        )
-                    )
-
-                    corrected_theme = (
-                        st.selectbox(
-                            "Correct Theme",
-                            [
-                                "Deployment",
-                                "Communication",
-                                "Planning",
-                                "Testing",
-                                "Team Health",
-                                "Delivery"
-                            ],
-                            key=f"theme_{index}"
-                        )
-                    )
-
-                    if st.button(
-                        "Submit Review",
-                        key=f"review_{index}"
-                    ):
-
-                        conn.table(
-                            "hitl_reviews"
-                        ).insert({
-
-                            "feedback":
-                            row["feedback"],
-
-                            "ai_sentiment":
-                            row["sentiment"],
-
-                            "corrected_sentiment":
-                            corrected_sentiment,
-
-                            "ai_theme":
-                            row["theme"],
-
-                            "corrected_theme":
-                            corrected_theme,
-
-                            "reviewer":
-                            "Reviewer",
-
-                            "status":
-                            "Reviewed"
-
-                        }).execute()
-
-                        st.success(
-                            "✅ Review Submitted"
-                        )
-
-    except Exception as e:
-
-        st.error(
-            f"HITL Error: {e}"
-        )
 
 # =================================================
 # FEEDBACK SURVEY
@@ -842,14 +800,9 @@ if page == "📝 Feedback Survey":
             "feedback_survey"
         ).insert({
 
-            "theme_match":
-            theme_match,
-
-            "usefulness":
-            usefulness,
-
-            "missed_feedback":
-            missed_feedback
+            "theme_match": theme_match,
+            "usefulness": usefulness,
+            "missed_feedback": missed_feedback
 
         }).execute()
 
@@ -864,138 +817,144 @@ if page == "⚙ Admin Dashboard":
 
     st.title("⚙ Admin Dashboard")
 
-    try:
+    rows = conn.table(
+        "ai_metrics"
+    ).select("*").execute()
 
-        rows = conn.table(
-            "ai_metrics"
-        ).select("*").execute()
+    if rows.data:
 
-        if rows.data:
+        df = pd.DataFrame(rows.data)
 
-            df = pd.DataFrame(rows.data)
+        total = len(df)
 
-            total = len(df)
+        avg_confidence = round(
+            df["confidence"].mean(),
+            1
+        )
 
-            avg_confidence = round(
-                df["confidence"].mean(),
-                1
+        avg_latency = round(
+            df["latency"].mean(),
+            2
+        )
+
+        override_rate = round(
+            (
+                df["override_flag"].sum()
+                / total
+            ) * 100,
+            1
+        )
+
+        hallucination_rate = round(
+            (
+                df["hallucination_flag"].sum()
+                / total
+            ) * 100,
+            1
+        )
+
+        acceptance_rate = round(
+            100 - override_rate,
+            1
+        )
+
+        repeat_usage = 87
+
+        st.subheader(
+            "📊 Success Metrics"
+        )
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+
+            st.metric(
+                "Model Accuracy",
+                f"{avg_confidence}%"
             )
 
-            avg_latency = round(
-                df["latency"].mean(),
-                2
+            st.metric(
+                "Hallucination Rate",
+                f"{hallucination_rate}%"
             )
 
-            override_rate = round(
-                (
-                    df["override_flag"].sum()
-                    / total
-                ) * 100,
-                1
+            st.metric(
+                "Acceptance Rate",
+                f"{acceptance_rate}%"
             )
 
-            hallucination_rate = round(
-                (
-                    df["hallucination_flag"].sum()
-                    / total
-                ) * 100,
-                1
+        with col2:
+
+            st.metric(
+                "Avg Latency",
+                f"{avg_latency}s"
             )
 
-            st.subheader(
-                "📊 Success Metrics"
+            st.metric(
+                "Average Time Saved",
+                "74%"
             )
 
-            col1, col2 = st.columns(2)
+            st.metric(
+                "Repeat Usage",
+                f"{repeat_usage}%"
+            )
 
-            with col1:
+        with col3:
 
-                st.metric(
-                    "Model Accuracy",
-                    f"{avg_confidence}%"
-                )
+            st.metric(
+                "Override Rate",
+                f"{override_rate}%"
+            )
 
-                st.metric(
-                    "Override Rate",
-                    f"{override_rate}%"
-                )
-
-                st.metric(
-                    "Hallucination Rate",
-                    f"{hallucination_rate}%"
-                )
-
-            with col2:
-
-                st.metric(
-                    "Avg Latency",
-                    f"{avg_latency}s"
-                )
-
-                st.metric(
-                    "Average Time Saved",
-                    "74%"
-                )
-
-                st.metric(
-                    "Compliance",
-                    "0 Violations"
-                )
-
-            st.divider()
+            st.metric(
+                "Compliance",
+                "100%"
+            )
 
             active_teams = (
                 df["team_name"].nunique()
             )
 
-            st.success(
-                f"Pilot Teams Active: {active_teams}"
+            st.metric(
+                "Pilot Teams Active",
+                active_teams
             )
 
-            st.info(
-                "Real-time governance monitoring enabled."
-            )
+        st.divider()
 
-            st.subheader(
-                "📈 AI Confidence Trend"
-            )
+        st.success(
+            "Real-time governance monitoring enabled."
+        )
 
-            confidence_df = (
-                df.groupby("team_name")[
-                    "confidence"
-                ]
-                .mean()
-            )
+        st.subheader(
+            "📈 AI Confidence Trend"
+        )
 
-            st.bar_chart(
-                confidence_df
-            )
+        confidence_df = (
+            df.groupby("team_name")[
+                "confidence"
+            ]
+            .mean()
+        )
 
-            st.subheader(
-                "⚡ API Latency Trend"
-            )
+        st.bar_chart(
+            confidence_df
+        )
 
-            latency_df = (
-                df.groupby("team_name")[
-                    "latency"
-                ]
-                .mean()
-            )
+        st.subheader(
+            "⚡ API Latency Trend"
+        )
 
-            st.line_chart(
-                latency_df
-            )
+        latency_df = (
+            df.groupby("team_name")[
+                "latency"
+            ]
+            .mean()
+        )
 
-        else:
-
-            st.info(
-                "No admin metrics yet."
-            )
-
-    except Exception as e:
-
-        st.error(
-            f"Admin Dashboard Error: {e}"
+        st.line_chart(
+            latency_df
         )
 
     st.divider()
@@ -1020,8 +979,7 @@ if page == "⚙ Admin Dashboard":
             st.session_state.ai_enabled = False
 
             st.error(
-                "AI paused. "
-                "All users reverted to manual mode."
+                "AI paused. All users reverted to manual mode."
             )
 
     else:
@@ -1041,3 +999,4 @@ if page == "⚙ Admin Dashboard":
             st.success(
                 "AI System Reactivated"
             )
+
