@@ -1,3 +1,7 @@
+# ================================
+# Synkr AI Dashboard - app.py
+# ================================
+
 import streamlit as st
 from groq import Groq
 from st_supabase_connection import SupabaseConnection
@@ -28,32 +32,32 @@ client = Groq(
 )
 
 # =================================================
-# GLOBAL KEYWORDS
+# KEYWORDS
 # =================================================
 sensitive_keywords = [
     "harassment",
-    "fired",
-    "lawsuit",
+    "salary",
     "abuse",
-    "salary"
+    "lawsuit",
+    "fired"
 ]
 
 burnout_keywords = [
     "burnout",
     "stress",
-    "overworked",
     "exhausted",
-    "tired"
+    "tired",
+    "overworked"
 ]
 
 positive_keywords = [
     "good",
     "great",
-    "happy",
-    "smooth",
     "excellent",
-    "fast",
-    "improved"
+    "smooth",
+    "improved",
+    "happy",
+    "fast"
 ]
 
 negative_keywords = [
@@ -61,9 +65,9 @@ negative_keywords = [
     "blocked",
     "issue",
     "problem",
+    "failure",
     "stress",
-    "burnout",
-    "failure"
+    "burnout"
 ]
 
 # =================================================
@@ -74,7 +78,7 @@ You are Synkr AI.
 
 Analyze sprint retrospective feedback.
 
-For every feedback item identify:
+Identify:
 - sentiment
 - theme
 - risk level
@@ -137,37 +141,90 @@ if page == "🏠 Retro Analysis":
     guardrails = st.session_state.guardrails
 
     # =================================================
-    # GUARDRAILS
+    # GUARDRAIL DETECTION
     # =================================================
-    if guardrails["sensitive_hr"]:
+    if retro_text:
 
-        if any(
-            word in retro_text.lower()
-            for word in sensitive_keywords
+        # ---------------------------------------------
+        # Sensitive HR
+        # ---------------------------------------------
+        if (
+            guardrails["sensitive_hr"]
+            and any(
+                word in retro_text.lower()
+                for word in sensitive_keywords
+            )
         ):
 
             st.error(
                 "🚨 Sensitive HR-related content detected"
             )
 
-    if guardrails["burnout_detection"]:
+            conn.table(
+                "guardrail_events"
+            ).insert({
 
-        if any(
-            word in retro_text.lower()
-            for word in burnout_keywords
+                "sprint_name": sprint_name,
+                "team_name": team_name,
+                "feedback": retro_text,
+                "guardrail_type": "Sensitive HR Content",
+                "severity": "High",
+                "reviewer_required": True
+
+            }).execute()
+
+        # ---------------------------------------------
+        # Burnout
+        # ---------------------------------------------
+        if (
+            guardrails["burnout_detection"]
+            and any(
+                word in retro_text.lower()
+                for word in burnout_keywords
+            )
         ):
 
             st.warning(
                 "🔥 Burnout risk detected"
             )
 
-    if guardrails["named_detection"]:
+            conn.table(
+                "guardrail_events"
+            ).insert({
 
-        if "manager" in retro_text.lower():
+                "sprint_name": sprint_name,
+                "team_name": team_name,
+                "feedback": retro_text,
+                "guardrail_type": "Burnout Detection",
+                "severity": "Medium",
+                "reviewer_required": True
+
+            }).execute()
+
+        # ---------------------------------------------
+        # Named Detection
+        # ---------------------------------------------
+        if (
+            guardrails["named_detection"]
+            and "manager" in retro_text.lower()
+        ):
 
             st.warning(
                 "👤 Potential named individual reference detected"
             )
+
+            conn.table(
+                "guardrail_events"
+            ).insert({
+
+                "sprint_name": sprint_name,
+                "team_name": team_name,
+                "feedback": retro_text,
+                "guardrail_type": "Named Individual",
+                "severity": "Medium",
+                "reviewer_required": False
+
+            }).execute()
 
     # =================================================
     # ANALYZE
@@ -177,7 +234,7 @@ if page == "🏠 Retro Analysis":
         if retro_text.strip():
 
             with st.spinner(
-                "🤖 Synkr AI analyzing sprint feedback..."
+                "🤖 Synkr AI analyzing..."
             ):
 
                 try:
@@ -260,10 +317,10 @@ if page == "🏠 Retro Analysis":
                             sentiment = "Neutral"
                             risk = "Medium"
                             confidence = 75
-                            theme = "General"
+                            theme = "Delivery"
 
                             # =====================================
-                            # THEME EXTRACTION
+                            # THEME DETECTION
                             # =====================================
                             if "deploy" in item_lower:
 
@@ -287,10 +344,6 @@ if page == "🏠 Retro Analysis":
                             ):
 
                                 theme = "Team Health"
-
-                            else:
-
-                                theme = "Delivery"
 
                             # =====================================
                             # SENTIMENT
@@ -319,6 +372,7 @@ if page == "🏠 Retro Analysis":
                             conn.table(
                                 "retro_analysis"
                             ).insert({
+
                                 "sprint_name": sprint_name,
                                 "team_name": team_name,
                                 "feedback": item,
@@ -326,31 +380,10 @@ if page == "🏠 Retro Analysis":
                                 "theme": theme,
                                 "risk_level": risk,
                                 "confidence": confidence
+
                             }).execute()
 
-                            threshold = guardrails[
-                                "confidence_threshold"
-                            ]
-
                             with st.container(border=True):
-
-                                if confidence >= threshold:
-
-                                    st.success(
-                                        "🟢 High Confidence"
-                                    )
-
-                                elif confidence >= 60:
-
-                                    st.warning(
-                                        "🟠 Suggested — Review Before Use"
-                                    )
-
-                                else:
-
-                                    st.error(
-                                        "🔴 AI Unsure"
-                                    )
 
                                 st.write(item)
 
@@ -395,50 +428,51 @@ if page == "📊 Team Dashboard":
             "retro_analysis"
         ).select("*").execute()
 
-        if rows.data and len(rows.data) > 0:
+        if rows.data:
 
             df = pd.DataFrame(rows.data)
 
             col1, col2, col3, col4 = st.columns(4)
 
-            total_feedback = len(df)
-
-            positive_count = len(
-                df[df["sentiment"] == "Positive"]
-            )
-
-            negative_count = len(
-                df[df["sentiment"] == "Negative"]
-            )
-
-            burnout_count = len(
-                df[df["theme"] == "Team Health"]
-            )
-
             col1.metric(
                 "Total Feedback",
-                total_feedback
+                len(df)
             )
 
             col2.metric(
                 "Positive Signals",
-                positive_count
+                len(
+                    df[
+                        df["sentiment"]
+                        == "Positive"
+                    ]
+                )
             )
 
             col3.metric(
                 "Negative Signals",
-                negative_count
+                len(
+                    df[
+                        df["sentiment"]
+                        == "Negative"
+                    ]
+                )
             )
 
             col4.metric(
                 "Burnout Risks",
-                burnout_count
+                len(
+                    df[
+                        df["theme"]
+                        == "Team Health"
+                    ]
+                )
             )
 
             st.divider()
 
             # =========================================
-            # REAL SPRINT SENTIMENT TRENDS
+            # SPRINT SENTIMENT TRENDS
             # =========================================
             st.subheader(
                 "📈 Sprint Sentiment Trends"
@@ -455,7 +489,7 @@ if page == "📊 Team Dashboard":
             st.line_chart(trend_df)
 
             # =========================================
-            # REAL THEME DISTRIBUTION
+            # THEME DISTRIBUTION
             # =========================================
             st.subheader(
                 "📊 Theme Distribution"
@@ -478,12 +512,6 @@ if page == "📊 Team Dashboard":
             st.dataframe(
                 df.tail(10),
                 width="stretch"
-            )
-
-        else:
-
-            st.info(
-                "No dashboard data available yet."
             )
 
     except Exception as e:
@@ -537,50 +565,97 @@ if page == "🛡 Guardrails":
     }
 
     st.success(
-        "✅ Guardrail settings updated"
+        "✅ Guardrails Updated"
     )
 
     st.divider()
 
     sample_text = st.text_area(
-        "Test guardrails with sample retro feedback",
-        height=120,
+        "Test guardrails",
         key="guardrail_test"
     )
 
     if sample_text:
 
-        sample_lower = sample_text.lower()
+        if any(
+            word in sample_text.lower()
+            for word in burnout_keywords
+        ):
 
-        if sensitive_hr:
+            st.warning(
+                "🔥 Burnout risk detected"
+            )
 
-            if any(
-                word in sample_lower
-                for word in sensitive_keywords
-            ):
+        if any(
+            word in sample_text.lower()
+            for word in sensitive_keywords
+        ):
 
-                st.error(
-                    "🚨 Sensitive HR content detected"
-                )
+            st.error(
+                "🚨 Sensitive HR content detected"
+            )
 
-        if burnout_detection:
+        if "manager" in sample_text.lower():
 
-            if any(
-                word in sample_lower
-                for word in burnout_keywords
-            ):
+            st.warning(
+                "👤 Named individual detected"
+            )
 
-                st.warning(
-                    "🔥 Burnout risk detected"
-                )
+    st.divider()
 
-        if named_detection:
+    # =============================================
+    # GUARDRAIL ANALYTICS
+    # =============================================
+    st.subheader(
+        "📊 Guardrail Analytics"
+    )
 
-            if "manager" in sample_lower:
+    try:
 
-                st.warning(
-                    "👤 Potential named individual reference detected"
-                )
+        guardrail_rows = conn.table(
+            "guardrail_events"
+        ).select("*").execute()
+
+        if guardrail_rows.data:
+
+            guardrail_df = pd.DataFrame(
+                guardrail_rows.data
+            )
+
+            st.metric(
+                "Total Guardrail Events",
+                len(guardrail_df)
+            )
+
+            st.subheader(
+                "Guardrail Type Distribution"
+            )
+
+            guardrail_counts = (
+                guardrail_df[
+                    "guardrail_type"
+                ]
+                .value_counts()
+            )
+
+            st.bar_chart(
+                guardrail_counts
+            )
+
+            st.subheader(
+                "Recent Guardrail Events"
+            )
+
+            st.dataframe(
+                guardrail_df.tail(10),
+                width="stretch"
+            )
+
+    except Exception as e:
+
+        st.error(
+            f"Guardrail Analytics Error: {e}"
+        )
 
 # =================================================
 # HITL REVIEW
@@ -588,10 +663,6 @@ if page == "🛡 Guardrails":
 if page == "🧠 HITL Review":
 
     st.title("🧠 Human-in-the-Loop Review")
-
-    reviewer_name = st.text_input(
-        "Reviewer Name"
-    )
 
     try:
 
@@ -607,49 +678,28 @@ if page == "🧠 HITL Review":
 
             for index, row in latest.iterrows():
 
-                confidence = row["confidence"]
-
-                review_required = (
-                    confidence <
-                    st.session_state.guardrails[
-                        "confidence_threshold"
-                    ]
-                )
-
                 with st.container(border=True):
 
                     st.write(
-                        f"📝 {row['feedback']}"
+                        row["feedback"]
                     )
 
                     col1, col2, col3 = st.columns(3)
 
                     col1.metric(
-                        "AI Sentiment",
+                        "Sentiment",
                         row["sentiment"]
                     )
 
                     col2.metric(
-                        "AI Theme",
+                        "Theme",
                         row["theme"]
                     )
 
                     col3.metric(
                         "Confidence",
-                        f"{confidence}%"
+                        f"{row['confidence']}%"
                     )
-
-                    if review_required:
-
-                        st.warning(
-                            "⚠ Manual review required"
-                        )
-
-                    else:
-
-                        st.success(
-                            "✅ High confidence AI output"
-                        )
 
                     corrected_sentiment = st.selectbox(
                         "Correct Sentiment",
@@ -674,135 +724,46 @@ if page == "🧠 HITL Review":
                         key=f"theme_{index}"
                     )
 
-                    col1, col2 = st.columns(2)
+                    if st.button(
+                        "Submit Review",
+                        key=f"review_{index}"
+                    ):
 
-                    with col1:
+                        conn.table(
+                            "hitl_reviews"
+                        ).insert({
 
-                        if st.button(
-                            "Approve AI",
-                            key=f"approve_{index}"
-                        ):
+                            "feedback":
+                            row["feedback"],
 
-                            conn.table(
-                                "hitl_reviews"
-                            ).insert({
+                            "ai_sentiment":
+                            row["sentiment"],
 
-                                "feedback":
-                                row["feedback"],
+                            "corrected_sentiment":
+                            corrected_sentiment,
 
-                                "ai_sentiment":
-                                row["sentiment"],
+                            "ai_theme":
+                            row["theme"],
 
-                                "corrected_sentiment":
-                                corrected_sentiment,
+                            "corrected_theme":
+                            corrected_theme,
 
-                                "ai_theme":
-                                row["theme"],
+                            "reviewer":
+                            "Reviewer",
 
-                                "corrected_theme":
-                                corrected_theme,
+                            "status":
+                            "Reviewed"
 
-                                "reviewer":
-                                reviewer_name,
+                        }).execute()
 
-                                "status":
-                                "Approved"
-
-                            }).execute()
-
-                            st.success(
-                                "✅ Review Approved"
-                            )
-
-                    with col2:
-
-                        if st.button(
-                            "Override AI",
-                            key=f"override_{index}"
-                        ):
-
-                            conn.table(
-                                "hitl_reviews"
-                            ).insert({
-
-                                "feedback":
-                                row["feedback"],
-
-                                "ai_sentiment":
-                                row["sentiment"],
-
-                                "corrected_sentiment":
-                                corrected_sentiment,
-
-                                "ai_theme":
-                                row["theme"],
-
-                                "corrected_theme":
-                                corrected_theme,
-
-                                "reviewer":
-                                reviewer_name,
-
-                                "status":
-                                "Overridden"
-
-                            }).execute()
-
-                            st.warning(
-                                "⚠ AI Override Recorded"
-                            )
-
-            st.divider()
-
-            st.subheader(
-                "📊 HITL Analytics"
-            )
-
-            review_rows = conn.table(
-                "hitl_reviews"
-            ).select("*").execute()
-
-            if review_rows.data:
-
-                review_df = pd.DataFrame(
-                    review_rows.data
-                )
-
-                approved_count = len(
-                    review_df[
-                        review_df["status"]
-                        == "Approved"
-                    ]
-                )
-
-                overridden_count = len(
-                    review_df[
-                        review_df["status"]
-                        == "Overridden"
-                    ]
-                )
-
-                col1, col2 = st.columns(2)
-
-                col1.metric(
-                    "Approved AI Decisions",
-                    approved_count
-                )
-
-                col2.metric(
-                    "AI Overrides",
-                    overridden_count
-                )
-
-                st.dataframe(
-                    review_df.tail(10),
-                    width="stretch"
-                )
+                        st.success(
+                            "✅ Review Submitted"
+                        )
 
     except Exception as e:
 
         st.error(
-            f"HITL Review Error: {e}"
+            f"HITL Error: {e}"
         )
 
 # =================================================
@@ -832,102 +793,28 @@ if page == "📝 Feedback Survey":
         "What did AI miss?"
     )
 
-    col1, col2 = st.columns(2)
+    if st.button(
+        "Submit Feedback"
+    ):
 
-    with col1:
+        conn.table(
+            "feedback_survey"
+        ).insert({
 
-        if st.button(
-            "Submit Feedback"
-        ):
+            "theme_match":
+            theme_match,
 
-            try:
+            "usefulness":
+            usefulness,
 
-                conn.table(
-                    "feedback_survey"
-                ).insert({
+            "missed_feedback":
+            missed_feedback
 
-                    "theme_match":
-                    theme_match,
+        }).execute()
 
-                    "usefulness":
-                    usefulness,
-
-                    "missed_feedback":
-                    missed_feedback
-
-                }).execute()
-
-                st.success(
-                    "✅ Feedback Submitted"
-                )
-
-            except Exception as e:
-
-                st.error(
-                    f"Survey Error: {e}"
-                )
-
-    with col2:
-
-        if st.button(
-            "View Survey Analytics"
-        ):
-
-            try:
-
-                rows = conn.table(
-                    "feedback_survey"
-                ).select("*").execute()
-
-                if rows.data:
-
-                    df = pd.DataFrame(
-                        rows.data
-                    )
-
-                    avg_usefulness = round(
-                        df["usefulness"].mean(),
-                        1
-                    )
-
-                    col1, col2 = st.columns(2)
-
-                    col1.metric(
-                        "Avg Usefulness",
-                        f"{avg_usefulness}/5"
-                    )
-
-                    yes_count = len(
-                        df[
-                            df["theme_match"]
-                            == "Yes"
-                        ]
-                    )
-
-                    col2.metric(
-                        "Positive AI Match",
-                        yes_count
-                    )
-
-                    match_counts = (
-                        df["theme_match"]
-                        .value_counts()
-                    )
-
-                    st.bar_chart(
-                        match_counts
-                    )
-
-                    st.dataframe(
-                        df.tail(10),
-                        width="stretch"
-                    )
-
-            except Exception as e:
-
-                st.error(
-                    f"Analytics Error: {e}"
-                )
+        st.success(
+            "✅ Feedback Submitted"
+        )
 
 # =================================================
 # ADMIN DASHBOARD
@@ -958,14 +845,6 @@ if page == "⚙ Admin Dashboard":
                 2
             )
 
-            hallucination_rate = round(
-                (
-                    df["hallucination_flag"].sum()
-                    / total
-                ) * 100,
-                1
-            )
-
             override_rate = round(
                 (
                     df["override_flag"].sum()
@@ -974,11 +853,7 @@ if page == "⚙ Admin Dashboard":
                 1
             )
 
-            active_teams = (
-                df["team_name"].nunique()
-            )
-
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
 
             col1.metric(
                 "Model Confidence",
@@ -990,29 +865,25 @@ if page == "⚙ Admin Dashboard":
                 f"{avg_latency}s"
             )
 
-            col1.metric(
+            col3.metric(
                 "Override Rate",
                 f"{override_rate}%"
             )
 
-            col2.metric(
-                "Hallucination Rate",
-                f"{hallucination_rate}%"
+            st.divider()
+
+            st.subheader(
+                "📊 AI Confidence Trend"
             )
 
-            st.success(
-                f"Pilot Teams Active: {active_teams}"
+            confidence_df = (
+                df.groupby("team_name")[
+                    "confidence"
+                ]
+                .mean()
             )
 
-            st.info(
-                "Average Time Saved: 74%"
-            )
-
-        else:
-
-            st.info(
-                "No AI metrics available yet."
-            )
+            st.bar_chart(confidence_df)
 
     except Exception as e:
 
