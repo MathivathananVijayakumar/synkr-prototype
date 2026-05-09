@@ -46,6 +46,24 @@ burnout_keywords = [
     "tired"
 ]
 
+positive_keywords = [
+    "good",
+    "great",
+    "happy",
+    "smooth",
+    "excellent",
+    "fast"
+]
+
+negative_keywords = [
+    "delay",
+    "blocked",
+    "issue",
+    "problem",
+    "stress",
+    "burnout"
+]
+
 # =================================================
 # SYSTEM PROMPT
 # =================================================
@@ -172,7 +190,7 @@ if page == "🏠 Retro Analysis":
     # -------------------------------------------------
     if st.button("Analyze Feedback"):
 
-        if retro_text:
+        if retro_text.strip():
 
             with st.spinner(
                 "🤖 Synkr AI analyzing sprint feedback..."
@@ -208,10 +226,8 @@ if page == "🏠 Retro Analysis":
                         .message.content
                     )
 
-                    end_time = time.time()
-
                     latency = round(
-                        end_time - start_time,
+                        time.time() - start_time,
                         2
                     )
 
@@ -240,7 +256,7 @@ if page == "🏠 Retro Analysis":
                     }).execute()
 
                     # -----------------------------------------
-                    # SHOW AI RESPONSE
+                    # AI RESPONSE
                     # -----------------------------------------
                     st.success(
                         "✅ Analysis Complete"
@@ -268,14 +284,12 @@ if page == "🏠 Retro Analysis":
                             confidence = 75
                             theme = "General"
 
+                            # ---------------------------------
+                            # SENTIMENT LOGIC
+                            # ---------------------------------
                             if any(
                                 word in item_lower
-                                for word in [
-                                    "good",
-                                    "great",
-                                    "happy",
-                                    "smooth"
-                                ]
+                                for word in positive_keywords
                             ):
 
                                 sentiment = "Positive"
@@ -285,13 +299,7 @@ if page == "🏠 Retro Analysis":
 
                             elif any(
                                 word in item_lower
-                                for word in [
-                                    "delay",
-                                    "blocked",
-                                    "issue",
-                                    "stress",
-                                    "burnout"
-                                ]
+                                for word in negative_keywords
                             ):
 
                                 sentiment = "Negative"
@@ -303,28 +311,28 @@ if page == "🏠 Retro Analysis":
                                 "confidence_threshold"
                             ]
 
-                            # ---------------------------------
-                            # CONFIDENCE UI
-                            # ---------------------------------
-                            if confidence >= threshold:
-
-                                st.success(
-                                    "🟢 High Confidence"
-                                )
-
-                            elif confidence >= 60:
-
-                                st.warning(
-                                    "🟠 Suggested — Review Before Use"
-                                )
-
-                            else:
-
-                                st.error(
-                                    "🔴 AI Unsure — Manual Review Required"
-                                )
-
                             with st.container(border=True):
+
+                                # -----------------------------
+                                # CONFIDENCE STATUS
+                                # -----------------------------
+                                if confidence >= threshold:
+
+                                    st.success(
+                                        "🟢 High Confidence"
+                                    )
+
+                                elif confidence >= 60:
+
+                                    st.warning(
+                                        "🟠 Suggested — Review Before Use"
+                                    )
+
+                                else:
+
+                                    st.error(
+                                        "🔴 AI Unsure — Manual Review Required"
+                                    )
 
                                 st.write(item)
 
@@ -380,7 +388,7 @@ if page == "📊 Team Dashboard":
             positive = len(
                 df[
                     df["content"].str.contains(
-                        "good|great|happy",
+                        "|".join(positive_keywords),
                         case=False,
                         na=False
                     )
@@ -390,7 +398,7 @@ if page == "📊 Team Dashboard":
             negative = len(
                 df[
                     df["content"].str.contains(
-                        "delay|blocked|issue",
+                        "|".join(negative_keywords),
                         case=False,
                         na=False
                     )
@@ -400,7 +408,7 @@ if page == "📊 Team Dashboard":
             burnout = len(
                 df[
                     df["content"].str.contains(
-                        "burnout|stress|tired",
+                        "|".join(burnout_keywords),
                         case=False,
                         na=False
                     )
@@ -447,12 +455,19 @@ if page == "📊 Team Dashboard":
 
             st.subheader("📊 Theme Distribution")
 
-            st.bar_chart({
-                "Communication": 8,
-                "Deployment": 6,
-                "Planning": 4,
-                "Testing": 3
+            theme_data = pd.DataFrame({
+                "Theme": [
+                    "Communication",
+                    "Deployment",
+                    "Planning",
+                    "Testing"
+                ],
+                "Count": [8, 6, 4, 3]
             })
+
+            st.bar_chart(
+                theme_data.set_index("Theme")
+            )
 
             st.subheader(
                 "📝 Recent Sprint Feedback"
@@ -460,7 +475,7 @@ if page == "📊 Team Dashboard":
 
             st.dataframe(
                 df.tail(10),
-                use_container_width=True
+                width="stretch"
             )
 
         else:
@@ -552,10 +567,6 @@ if page == "🛡 Guardrails":
 
     sample_text = st.text_area(
         "Test guardrails with sample retro feedback",
-        placeholder=(
-            "Example:\n"
-            "Team feels burnout due to deployment delays"
-        ),
         height=120
     )
 
@@ -622,120 +633,101 @@ if page == "🧠 HITL Review":
 
                 feedback_items = latest_feedback.split("\n")
 
-                st.subheader(
-                    "Review AI Predictions"
-                )
-
                 for index, item in enumerate(
                     feedback_items
                 ):
 
-                        if item.strip():
+                    if item.strip():
 
-                            item_lower = item.lower()
+                        item_lower = item.lower()
 
-                            ai_sentiment = "Neutral"
-                            ai_theme = "General"
+                        ai_sentiment = "Neutral"
+                        ai_theme = "General"
 
-                            if any(
-                                word in item_lower
-                                for word in [
-                                    "good",
-                                    "great",
-                                    "smooth"
-                                ]
+                        if any(
+                            word in item_lower
+                            for word in positive_keywords
+                        ):
+
+                            ai_sentiment = "Positive"
+                            ai_theme = "Delivery"
+
+                        elif any(
+                            word in item_lower
+                            for word in negative_keywords
+                        ):
+
+                            ai_sentiment = "Negative"
+                            ai_theme = "Team Health"
+
+                        with st.container(border=True):
+
+                            st.write(f"📝 {item}")
+
+                            col1, col2 = st.columns(2)
+
+                            col1.metric(
+                                "AI Sentiment",
+                                ai_sentiment
+                            )
+
+                            col2.metric(
+                                "AI Theme",
+                                ai_theme
+                            )
+
+                            st.divider()
+
+                            corrected_sentiment = (
+                                st.selectbox(
+                                    "Correct Sentiment",
+                                    [
+                                        "Positive",
+                                        "Neutral",
+                                        "Negative"
+                                    ],
+                                    key=f"sent_{index}"
+                                )
+                            )
+
+                            corrected_theme = (
+                                st.selectbox(
+                                    "Correct Theme",
+                                    [
+                                        "Communication",
+                                        "Deployment",
+                                        "Planning",
+                                        "Testing",
+                                        "Team Health",
+                                        "Delivery"
+                                    ],
+                                    key=f"theme_{index}"
+                                )
+                            )
+
+                            if st.button(
+                                "Submit Correction",
+                                key=f"btn_{index}"
                             ):
 
-                                ai_sentiment = "Positive"
-                                ai_theme = "Delivery"
-
-                            elif any(
-                                word in item_lower
-                                for word in [
-                                    "delay",
-                                    "blocked",
-                                    "issue",
-                                    "stress"
-                                ]
-                            ):
-
-                                ai_sentiment = "Negative"
-                                ai_theme = "Team Health"
-
-                            with st.container(border=True):
-
-                                st.write(f"📝 {item}")
-
-                                col1, col2 = st.columns(2)
-
-                                col1.metric(
-                                    "AI Sentiment",
-                                    ai_sentiment
+                                override_flag = (
+                                    corrected_sentiment
+                                    != ai_sentiment
                                 )
 
-                                col2.metric(
-                                    "AI Theme",
-                                    ai_theme
+                                conn.table(
+                                    "ai_metrics"
+                                ).insert({
+                                    "team_name": "Pilot Team",
+                                    "latency": 0,
+                                    "confidence": 75,
+                                    "hallucination_flag": False,
+                                    "override_flag": override_flag
+                                }).execute()
+
+                                st.success(
+                                    "✅ Correction Saved"
                                 )
-
-                                st.divider()
-
-                                corrected_sentiment = (
-                                    st.selectbox(
-                                        "Correct Sentiment",
-                                        [
-                                            "Positive",
-                                            "Neutral",
-                                            "Negative"
-                                        ],
-                                        key=f"sent_{index}"
-                                    )
-                                )
-
-                                corrected_theme = (
-                                    st.selectbox(
-                                        "Correct Theme",
-                                        [
-                                            "Communication",
-                                            "Deployment",
-                                            "Planning",
-                                            "Testing",
-                                            "Team Health",
-                                            "Delivery"
-                                        ],
-                                        key=f"theme_{index}"
-                                    )
-                                )
-
-                                if st.button(
-                                    "Submit Correction",
-                                    key=f"btn_{index}"
-                                ):
-
-                                    override_flag = (
-                                        corrected_sentiment
-                                        != ai_sentiment
-                                    )
-
-                                    conn.table(
-                                        "ai_metrics"
-                                    ).insert({
-                                        "team_name": "Pilot Team",
-                                        "latency": 0,
-                                        "confidence": 75,
-                                        "hallucination_flag": False,
-                                        "override_flag": override_flag
-                                    }).execute()
-
-                                    st.success(
-                                        "✅ Correction Saved"
-                                    )
-
-            else:
-
-                st.info(
-                    "No retro feedback available yet."
-                )
 
         else:
 
