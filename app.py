@@ -28,6 +28,25 @@ client = Groq(
 )
 
 # =================================================
+# GLOBAL KEYWORDS
+# =================================================
+sensitive_keywords = [
+    "harassment",
+    "fired",
+    "lawsuit",
+    "abuse",
+    "salary"
+]
+
+burnout_keywords = [
+    "burnout",
+    "stress",
+    "overworked",
+    "exhausted",
+    "tired"
+]
+
+# =================================================
 # SYSTEM PROMPT
 # =================================================
 system_prompt = """
@@ -56,9 +75,6 @@ Rules:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# -------------------------------------------------
-# GUARDRAIL DEFAULTS
-# -------------------------------------------------
 if "guardrails" not in st.session_state:
 
     st.session_state.guardrails = {
@@ -99,30 +115,11 @@ if page == "🏠 Retro Analysis":
         placeholder="One feedback item per line"
     )
 
-    # ---------------------------------------------
-    # GUARDRAIL VALUES
-    # ---------------------------------------------
     guardrails = st.session_state.guardrails
 
-    # ---------------------------------------------
+    # -------------------------------------------------
     # INPUT GUARDRAILS
-    # ---------------------------------------------
-    sensitive_keywords = [
-        "harassment",
-        "fired",
-        "lawsuit",
-        "abuse",
-        "salary"
-    ]
-
-    burnout_keywords = [
-        "burnout",
-        "stress",
-        "overworked",
-        "exhausted",
-        "tired"
-    ]
-
+    # -------------------------------------------------
     if guardrails["sensitive_hr"]:
 
         if any(
@@ -153,9 +150,9 @@ if page == "🏠 Retro Analysis":
                 "👤 Potential named individual reference detected"
             )
 
-    # ---------------------------------------------
+    # -------------------------------------------------
     # QUALITY CHECK
-    # ---------------------------------------------
+    # -------------------------------------------------
     lines = retro_text.split("\n")
 
     short_lines = [
@@ -170,9 +167,9 @@ if page == "🏠 Retro Analysis":
             "for reliable AI analysis."
         )
 
-    # ---------------------------------------------
+    # -------------------------------------------------
     # ANALYZE BUTTON
-    # ---------------------------------------------
+    # -------------------------------------------------
     if st.button("Analyze Feedback"):
 
         if retro_text:
@@ -232,7 +229,7 @@ if page == "🏠 Retro Analysis":
                     }).execute()
 
                     # -----------------------------------------
-                    # SAVE SESSION METRICS
+                    # SAVE METRICS
                     # -----------------------------------------
                     conn.table("ai_metrics").insert({
                         "team_name": team_name,
@@ -243,7 +240,7 @@ if page == "🏠 Retro Analysis":
                     }).execute()
 
                     # -----------------------------------------
-                    # AI RESPONSE
+                    # SHOW AI RESPONSE
                     # -----------------------------------------
                     st.success(
                         "✅ Analysis Complete"
@@ -271,9 +268,6 @@ if page == "🏠 Retro Analysis":
                             confidence = 75
                             theme = "General"
 
-                            # ---------------------------------
-                            # SIMPLE RULE ENGINE
-                            # ---------------------------------
                             if any(
                                 word in item_lower
                                 for word in [
@@ -636,106 +630,106 @@ if page == "🧠 HITL Review":
                     feedback_items
                 ):
 
-                    if item.strip():
+                        if item.strip():
 
-                        item_lower = item.lower()
+                            item_lower = item.lower()
 
-                        ai_sentiment = "Neutral"
-                        ai_theme = "General"
+                            ai_sentiment = "Neutral"
+                            ai_theme = "General"
 
-                        if any(
-                            word in item_lower
-                            for word in [
-                                "good",
-                                "great",
-                                "smooth"
-                            ]
-                        ):
-
-                            ai_sentiment = "Positive"
-                            ai_theme = "Delivery"
-
-                        elif any(
-                            word in item_lower
-                            for word in [
-                                "delay",
-                                "blocked",
-                                "issue",
-                                "stress"
-                            ]
-                        ):
-
-                            ai_sentiment = "Negative"
-                            ai_theme = "Team Health"
-
-                        with st.container(border=True):
-
-                            st.write(f"📝 {item}")
-
-                            col1, col2 = st.columns(2)
-
-                            col1.metric(
-                                "AI Sentiment",
-                                ai_sentiment
-                            )
-
-                            col2.metric(
-                                "AI Theme",
-                                ai_theme
-                            )
-
-                            st.divider()
-
-                            corrected_sentiment = (
-                                st.selectbox(
-                                    "Correct Sentiment",
-                                    [
-                                        "Positive",
-                                        "Neutral",
-                                        "Negative"
-                                    ],
-                                    key=f"sent_{index}"
-                                )
-                            )
-
-                            corrected_theme = (
-                                st.selectbox(
-                                    "Correct Theme",
-                                    [
-                                        "Communication",
-                                        "Deployment",
-                                        "Planning",
-                                        "Testing",
-                                        "Team Health",
-                                        "Delivery"
-                                    ],
-                                    key=f"theme_{index}"
-                                )
-                            )
-
-                            if st.button(
-                                "Submit Correction",
-                                key=f"btn_{index}"
+                            if any(
+                                word in item_lower
+                                for word in [
+                                    "good",
+                                    "great",
+                                    "smooth"
+                                ]
                             ):
 
-                                override_flag = (
-                                    corrected_sentiment
-                                    != ai_sentiment
+                                ai_sentiment = "Positive"
+                                ai_theme = "Delivery"
+
+                            elif any(
+                                word in item_lower
+                                for word in [
+                                    "delay",
+                                    "blocked",
+                                    "issue",
+                                    "stress"
+                                ]
+                            ):
+
+                                ai_sentiment = "Negative"
+                                ai_theme = "Team Health"
+
+                            with st.container(border=True):
+
+                                st.write(f"📝 {item}")
+
+                                col1, col2 = st.columns(2)
+
+                                col1.metric(
+                                    "AI Sentiment",
+                                    ai_sentiment
                                 )
 
-                                conn.table(
-                                    "ai_metrics"
-                                ).insert({
-                                    "team_name": "Pilot Team",
-                                    "latency": 0,
-                                    "confidence": 75,
-                                    "hallucination_flag": False,
-                                    "override_flag": override_flag
-                                }).execute()
-
-                                st.success(
-                                    "✅ Correction Saved"
+                                col2.metric(
+                                    "AI Theme",
+                                    ai_theme
                                 )
+
+                                st.divider()
+
+                                corrected_sentiment = (
+                                    st.selectbox(
+                                        "Correct Sentiment",
+                                        [
+                                            "Positive",
+                                            "Neutral",
+                                            "Negative"
+                                        ],
+                                        key=f"sent_{index}"
+                                    )
+                                )
+
+                                corrected_theme = (
+                                    st.selectbox(
+                                        "Correct Theme",
+                                        [
+                                            "Communication",
+                                            "Deployment",
+                                            "Planning",
+                                            "Testing",
+                                            "Team Health",
+                                            "Delivery"
+                                        ],
+                                        key=f"theme_{index}"
+                                    )
+                                )
+
+                                if st.button(
+                                    "Submit Correction",
+                                    key=f"btn_{index}"
+                                ):
+
+                                    override_flag = (
+                                        corrected_sentiment
+                                        != ai_sentiment
+                                    )
+
+                                    conn.table(
+                                        "ai_metrics"
+                                    ).insert({
+                                        "team_name": "Pilot Team",
+                                        "latency": 0,
+                                        "confidence": 75,
+                                        "hallucination_flag": False,
+                                        "override_flag": override_flag
+                                    }).execute()
+
+                                    st.success(
+                                        "✅ Correction Saved"
+                                    )
 
             else:
 
