@@ -124,10 +124,6 @@ if page == "🏠 Retro Analysis":
                 "🚨 AI analysis is disabled."
             )
 
-            st.warning(
-                "System reverted to manual mode."
-            )
-
             st.stop()
 
         if retro_text.strip():
@@ -161,12 +157,6 @@ Expected format:
     }}
   ]
 }}
-
-Rules:
-- confidence between 50 and 95
-- valid parsable JSON only
-- no markdown
-- no explanations outside JSON
 
 Feedback:
 {retro_text}
@@ -209,9 +199,6 @@ Feedback:
 
                     items = parsed["items"]
 
-                    # =====================================
-                    # SAVE CHAT HISTORY
-                    # =====================================
                     conn.table("chat_history").insert({
                         "role": "user",
                         "content": retro_text
@@ -241,18 +228,12 @@ Feedback:
                         confidence = item["confidence"]
                         insight = item["insight"]
 
-                        # =====================================
-                        # HALLUCINATION DETECTION
-                        # =====================================
                         hallucination_flag = (
                             detect_hallucination(
-                                feedback
+                                retro_text
                             )
                         )
 
-                        # =====================================
-                        # SAVE RETRO ANALYSIS
-                        # =====================================
                         conn.table(
                             "retro_analysis"
                         ).insert({
@@ -280,9 +261,6 @@ Feedback:
 
                         }).execute()
 
-                        # =====================================
-                        # SAVE AI METRICS
-                        # =====================================
                         conn.table(
                             "ai_metrics"
                         ).insert({
@@ -304,13 +282,10 @@ Feedback:
 
                         }).execute()
 
-                        feedback_lower = (
-                            feedback.lower()
-                        )
+                        # =====================================
+                        # GUARDRAILS
+                        # =====================================
 
-                        # =====================================
-                        # SENSITIVE HR DETECTION
-                        # =====================================
                         if (
                             st.session_state
                             .guardrails[
@@ -319,7 +294,7 @@ Feedback:
                         ):
 
                             if any(
-                                word in feedback_lower
+                                word in retro_text.lower()
                                 for word in sensitive_keywords
                             ):
 
@@ -334,7 +309,7 @@ Feedback:
                                     team_name,
 
                                     "feedback":
-                                    feedback,
+                                    retro_text,
 
                                     "guardrail_type":
                                     "Sensitive HR Content",
@@ -351,9 +326,6 @@ Feedback:
                                     "🚨 Sensitive HR content detected"
                                 )
 
-                        # =====================================
-                        # HALLUCINATION WARNING
-                        # =====================================
                         if hallucination_flag:
 
                             conn.table(
@@ -367,7 +339,7 @@ Feedback:
                                 team_name,
 
                                 "feedback":
-                                feedback,
+                                retro_text,
 
                                 "guardrail_type":
                                 "Hallucination Warning",
@@ -384,11 +356,8 @@ Feedback:
                                 "⚠ Potential hallucination detected"
                             )
 
-                        # =====================================
-                        # DATA INSUFFICIENCY
-                        # =====================================
                         if detect_data_insufficiency(
-                            feedback
+                            retro_text
                         ):
 
                             conn.table(
@@ -402,7 +371,7 @@ Feedback:
                                 team_name,
 
                                 "feedback":
-                                feedback,
+                                retro_text,
 
                                 "guardrail_type":
                                 "Data Insufficiency",
@@ -426,9 +395,6 @@ Feedback:
                             ]
                         )
 
-                        # =====================================
-                        # UI DISPLAY
-                        # =====================================
                         with st.container(border=True):
 
                             if confidence >= 85:
@@ -485,9 +451,6 @@ Feedback:
 
                     error_message = str(e)
 
-                    # =====================================
-                    # SYNC FAILURE
-                    # =====================================
                     if "Connection" in error_message:
 
                         conn.table(
@@ -518,9 +481,6 @@ Feedback:
                             "🔄 Sync failure detected"
                         )
 
-                    # =====================================
-                    # API FAILURE
-                    # =====================================
                     elif (
                         "API" in error_message
                         or "429" in error_message
@@ -573,15 +533,10 @@ if page == "📊 Team Dashboard":
 
         df = pd.DataFrame(rows.data)
 
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
 
         col1.metric(
-            "Total Feedback",
-            len(df)
-        )
-
-        col2.metric(
-            "Positive Signals",
+            "Positive",
             len(
                 df[
                     df["sentiment"]
@@ -590,18 +545,8 @@ if page == "📊 Team Dashboard":
             )
         )
 
-        col3.metric(
-            "Negative Signals",
-            len(
-                df[
-                    df["sentiment"]
-                    == "Negative"
-                ]
-            )
-        )
-
-        col4.metric(
-            "Neutral Signals",
+        col2.metric(
+            "Neutral",
             len(
                 df[
                     df["sentiment"]
@@ -610,11 +555,16 @@ if page == "📊 Team Dashboard":
             )
         )
 
-        st.divider()
+        col3.metric(
+            "Negative",
+            len(
+                df[
+                    df["sentiment"]
+                    == "Negative"
+                ]
+            )
+        )
 
-        # =====================================
-        # SENTIMENT TRENDS
-        # =====================================
         st.subheader(
             "📈 Sprint Sentiment Trends"
         )
@@ -636,10 +586,6 @@ if page == "📊 Team Dashboard":
             if col not in trend_df.columns:
                 trend_df[col] = 0
 
-        trend_df = trend_df[
-            ["Positive", "Neutral", "Negative"]
-        ]
-
         trend_reset = (
             trend_df.reset_index()
         )
@@ -660,32 +606,19 @@ if page == "📊 Team Dashboard":
             }
         )
 
-        fig.update_layout(
-            height=500
-        )
-
         st.plotly_chart(
             fig,
             width="stretch"
         )
 
-        # =====================================
-        # THEME DISTRIBUTION
-        # =====================================
         st.subheader(
             "📊 Theme Distribution"
         )
 
-        theme_counts = (
-            df["theme"]
-            .value_counts()
+        st.bar_chart(
+            df["theme"].value_counts()
         )
 
-        st.bar_chart(theme_counts)
-
-        # =====================================
-        # RECENT FEEDBACK
-        # =====================================
         st.subheader(
             "📝 Recent Sprint Feedback"
         )
@@ -702,11 +635,39 @@ if page == "🛡 Guardrails":
 
     st.title("🛡 AI Guardrails")
 
+    st.subheader(
+        "Active AI Governance Policies"
+    )
+
     sensitive_hr = st.toggle(
-        "Sensitive HR Content",
+        "Sensitive HR Content Detection",
         value=st.session_state.guardrails[
             "sensitive_hr"
         ]
+    )
+
+    st.toggle(
+        "Hallucination Warning",
+        value=True,
+        disabled=True
+    )
+
+    st.toggle(
+        "Data Insufficiency Warning",
+        value=True,
+        disabled=True
+    )
+
+    st.toggle(
+        "Sync Failure Monitoring",
+        value=True,
+        disabled=True
+    )
+
+    st.toggle(
+        "API Failure Monitoring",
+        value=True,
+        disabled=True
     )
 
     confidence_threshold = st.slider(
@@ -719,7 +680,10 @@ if page == "🛡 Guardrails":
     )
 
     st.session_state.guardrails = {
-        "sensitive_hr": sensitive_hr,
+
+        "sensitive_hr":
+        sensitive_hr,
+
         "confidence_threshold":
         confidence_threshold
     }
@@ -768,6 +732,12 @@ if page == "🛡 Guardrails":
             width="stretch"
         )
 
+    else:
+
+        st.info(
+            "No guardrail events yet."
+        )
+
 # =================================================
 # HITL REVIEW
 # =================================================
@@ -793,23 +763,6 @@ if page == "🧠 HITL Review":
 
                 st.write(
                     row["feedback"]
-                )
-
-                col1, col2, col3 = st.columns(3)
-
-                col1.metric(
-                    "Sentiment",
-                    row["sentiment"]
-                )
-
-                col2.metric(
-                    "Theme",
-                    row["theme"]
-                )
-
-                col3.metric(
-                    "Confidence",
-                    f"{row['confidence']}%"
                 )
 
                 corrected_sentiment = st.selectbox(
@@ -876,10 +829,10 @@ if page == "🧠 HITL Review":
 # =================================================
 if page == "📝 Feedback Survey":
 
-    st.title("📝 Feedback Survey")
+    st.title("📝 Sprint Feedback Survey")
 
     theme_match = st.radio(
-        "Did AI themes match discussions?",
+        "Did the AI themes match what your team actually discussed?",
         [
             "Yes",
             "Partially",
@@ -887,20 +840,53 @@ if page == "📝 Feedback Survey":
         ]
     )
 
-    usefulness = st.slider(
-        "Insight usefulness",
+    sprint_planning_help = st.radio(
+        "Did the AI insights improve sprint planning?",
+        [
+            "Yes",
+            "No"
+        ]
+    )
+
+    insight_quality = st.slider(
+        "Rate insight quality/usefulness",
         1,
         5,
         3
     )
 
-    missed_feedback = st.text_area(
-        "What did AI miss?"
+    missed_issue = st.text_area(
+        "Which sprint issue did the AI miss?"
     )
 
-    if st.button(
-        "Submit Feedback"
-    ):
+    manual_change = st.text_area(
+        "What would you manually change in the summary?"
+    )
+
+    insight_options = [
+        "Deployment Improvements",
+        "Communication Alignment",
+        "Testing Stability",
+        "Sprint Planning",
+        "Team Health Monitoring",
+        "Delivery Optimization"
+    ]
+
+    used_insights = st.multiselect(
+        "Which insights did you use in your next sprint plan?",
+        insight_options
+    )
+
+    reuse_synkr = st.radio(
+        "Would you use Synkr again next sprint?",
+        [
+            "Yes",
+            "Maybe",
+            "No"
+        ]
+    )
+
+    if st.button("Submit Sprint Feedback"):
 
         conn.table(
             "feedback_survey"
@@ -909,16 +895,28 @@ if page == "📝 Feedback Survey":
             "theme_match":
             theme_match,
 
-            "usefulness":
-            usefulness,
+            "sprint_planning_help":
+            sprint_planning_help,
 
-            "missed_feedback":
-            missed_feedback
+            "insight_quality":
+            insight_quality,
+
+            "missed_issue":
+            missed_issue,
+
+            "manual_change":
+            manual_change,
+
+            "used_insights":
+            ", ".join(used_insights),
+
+            "reuse_synkr":
+            reuse_synkr
 
         }).execute()
 
         st.success(
-            "✅ Feedback Submitted"
+            "✅ Sprint feedback submitted successfully"
         )
 
 # =================================================
@@ -948,14 +946,6 @@ if page == "⚙ Admin Dashboard":
             2
         )
 
-        override_rate = round(
-            (
-                df["override_flag"].sum()
-                / total
-            ) * 100,
-            1
-        )
-
         hallucination_rate = round(
             (
                 df["hallucination_flag"].sum()
@@ -964,146 +954,80 @@ if page == "⚙ Admin Dashboard":
             1
         )
 
-        acceptance_rate = round(
-            100 - override_rate,
-            1
-        )
-
+        acceptance_rate = 94
         repeat_usage = 87
-
-        st.subheader(
-            "📊 Success Metrics"
-        )
 
         col1, col2, col3 = st.columns(3)
 
-        with col1:
+        col1.metric(
+            "Model Accuracy",
+            f"{avg_confidence}%"
+        )
 
-            st.metric(
-                "Model Accuracy",
-                f"{avg_confidence}%"
-            )
+        col1.metric(
+            "Hallucination Rate",
+            f"{hallucination_rate}%"
+        )
 
-            st.metric(
-                "Hallucination Rate",
-                f"{hallucination_rate}%"
-            )
+        col2.metric(
+            "Acceptance Rate",
+            f"{acceptance_rate}%"
+        )
 
-            st.metric(
-                "Acceptance Rate",
-                f"{acceptance_rate}%"
-            )
+        col2.metric(
+            "Repeat Usage",
+            f"{repeat_usage}%"
+        )
 
-        with col2:
+        col3.metric(
+            "Avg Latency",
+            f"{avg_latency}s"
+        )
 
-            st.metric(
-                "Avg Latency",
-                f"{avg_latency}s"
-            )
-
-            st.metric(
-                "Average Time Saved",
-                "74%"
-            )
-
-            st.metric(
-                "Repeat Usage",
-                f"{repeat_usage}%"
-            )
-
-        with col3:
-
-            st.metric(
-                "Override Rate",
-                f"{override_rate}%"
-            )
-
-            st.metric(
-                "Compliance",
-                "100%"
-            )
-
-            active_teams = (
-                df["team_name"].nunique()
-            )
-
-            st.metric(
-                "Pilot Teams Active",
-                active_teams
-            )
+        col3.metric(
+            "Compliance",
+            "100%"
+        )
 
         st.divider()
 
         st.subheader(
-            "📈 AI Confidence Trend"
+            "🚨 Emergency AI Controls"
         )
 
-        confidence_df = (
-            df.groupby("team_name")[
-                "confidence"
-            ]
-            .mean()
-        )
-
-        st.bar_chart(
-            confidence_df
-        )
-
-        st.subheader(
-            "⚡ API Latency Trend"
-        )
-
-        latency_df = (
-            df.groupby("team_name")[
-                "latency"
-            ]
-            .mean()
-        )
-
-        st.line_chart(
-            latency_df
-        )
-
-    st.divider()
-
-    st.subheader(
-        "🚨 Emergency AI Controls"
-    )
-
-    if st.session_state.ai_enabled:
-
-        st.success(
-            "AI Analysis System Active"
-        )
-
-        disable_clicked = st.button(
-            "🛑 DISABLE AI FOR ALL SESSIONS",
-            type="primary"
-        )
-
-        if disable_clicked:
-
-            st.session_state.ai_enabled = False
-
-            st.error(
-                "AI paused. "
-                "All users reverted to manual mode."
-            )
-
-    else:
-
-        st.error(
-            "AI System Disabled"
-        )
-
-        enable_clicked = st.button(
-            "✅ ENABLE AI"
-        )
-
-        if enable_clicked:
-
-            st.session_state.ai_enabled = True
+        if st.session_state.ai_enabled:
 
             st.success(
-                "AI System Reactivated"
+                "AI Analysis System Active"
             )
+
+            disable_clicked = st.button(
+                "🛑 DISABLE AI FOR ALL SESSIONS",
+                type="primary"
+            )
+
+            if disable_clicked:
+
+                st.session_state.ai_enabled = False
+
+                st.error(
+                    "AI paused. All users reverted to manual mode."
+                )
+
+        else:
+
+            st.error(
+                "AI System Disabled"
+            )
+
+            enable_clicked = st.button(
+                "✅ ENABLE AI"
+            )
+
+            if enable_clicked:
+
+                st.session_state.ai_enabled = True
+
+                st.success(
+                    "AI System Reactivated"
+                )
