@@ -56,6 +56,18 @@ Rules:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# -------------------------------------------------
+# GUARDRAIL DEFAULTS
+# -------------------------------------------------
+if "guardrails" not in st.session_state:
+
+    st.session_state.guardrails = {
+        "named_detection": True,
+        "burnout_detection": True,
+        "sensitive_hr": True,
+        "confidence_threshold": 70
+    }
+
 # =================================================
 # SIDEBAR NAVIGATION
 # =================================================
@@ -87,26 +99,63 @@ if page == "🏠 Retro Analysis":
         placeholder="One feedback item per line"
     )
 
-    # -------------------------------------------------
-    # GUARDRAILS
-    # -------------------------------------------------
+    # ---------------------------------------------
+    # GUARDRAIL VALUES
+    # ---------------------------------------------
+    guardrails = st.session_state.guardrails
+
+    # ---------------------------------------------
+    # INPUT GUARDRAILS
+    # ---------------------------------------------
     sensitive_keywords = [
         "harassment",
         "fired",
         "lawsuit",
         "abuse",
-        "salary",
-        "manager"
+        "salary"
     ]
 
-    if any(
-        word in retro_text.lower()
-        for word in sensitive_keywords
-    ):
-        st.warning(
-            "⚠ Sensitive HR-related content detected."
-        )
+    burnout_keywords = [
+        "burnout",
+        "stress",
+        "overworked",
+        "exhausted",
+        "tired"
+    ]
 
+    if guardrails["sensitive_hr"]:
+
+        if any(
+            word in retro_text.lower()
+            for word in sensitive_keywords
+        ):
+
+            st.error(
+                "🚨 Sensitive HR-related content detected"
+            )
+
+    if guardrails["burnout_detection"]:
+
+        if any(
+            word in retro_text.lower()
+            for word in burnout_keywords
+        ):
+
+            st.warning(
+                "🔥 Burnout risk detected"
+            )
+
+    if guardrails["named_detection"]:
+
+        if "manager" in retro_text.lower():
+
+            st.warning(
+                "👤 Potential named individual reference detected"
+            )
+
+    # ---------------------------------------------
+    # QUALITY CHECK
+    # ---------------------------------------------
     lines = retro_text.split("\n")
 
     short_lines = [
@@ -115,14 +164,15 @@ if page == "🏠 Retro Analysis":
     ]
 
     if len(short_lines) > 2:
+
         st.warning(
             "⚠ Feedback quality may be too low "
             "for reliable AI analysis."
         )
 
-    # -------------------------------------------------
-    # ANALYZE
-    # -------------------------------------------------
+    # ---------------------------------------------
+    # ANALYZE BUTTON
+    # ---------------------------------------------
     if st.button("Analyze Feedback"):
 
         if retro_text:
@@ -193,7 +243,7 @@ if page == "🏠 Retro Analysis":
                     }).execute()
 
                     # -----------------------------------------
-                    # SHOW AI RESPONSE
+                    # AI RESPONSE
                     # -----------------------------------------
                     st.success(
                         "✅ Analysis Complete"
@@ -221,9 +271,9 @@ if page == "🏠 Retro Analysis":
                             confidence = 75
                             theme = "General"
 
-                            # -----------------------------
-                            # RULE ENGINE
-                            # -----------------------------
+                            # ---------------------------------
+                            # SIMPLE RULE ENGINE
+                            # ---------------------------------
                             if any(
                                 word in item_lower
                                 for word in [
@@ -233,6 +283,7 @@ if page == "🏠 Retro Analysis":
                                     "smooth"
                                 ]
                             ):
+
                                 sentiment = "Positive"
                                 risk = "Low"
                                 confidence = 90
@@ -248,32 +299,38 @@ if page == "🏠 Retro Analysis":
                                     "burnout"
                                 ]
                             ):
+
                                 sentiment = "Negative"
                                 risk = "High"
                                 confidence = 82
                                 theme = "Team Health"
 
-                            # -----------------------------
+                            threshold = guardrails[
+                                "confidence_threshold"
+                            ]
+
+                            # ---------------------------------
                             # CONFIDENCE UI
-                            # -----------------------------
-                            if confidence >= 85:
+                            # ---------------------------------
+                            if confidence >= threshold:
+
                                 st.success(
                                     "🟢 High Confidence"
                                 )
 
                             elif confidence >= 60:
+
                                 st.warning(
                                     "🟠 Suggested — Review Before Use"
                                 )
 
                             else:
+
                                 st.error(
-                                    "🔴 AI Unsure"
+                                    "🔴 AI Unsure — Manual Review Required"
                                 )
 
-                            with st.container(
-                                border=True
-                            ):
+                            with st.container(border=True):
 
                                 st.write(item)
 
@@ -378,9 +435,7 @@ if page == "📊 Team Dashboard":
 
             st.divider()
 
-            st.subheader(
-                "📈 Sprint Trends"
-            )
+            st.subheader("📈 Sprint Trends")
 
             chart_data = pd.DataFrame({
                 "Sprint": [
@@ -396,9 +451,7 @@ if page == "📊 Team Dashboard":
                 chart_data.set_index("Sprint")
             )
 
-            st.subheader(
-                "📊 Theme Distribution"
-            )
+            st.subheader("📊 Theme Distribution")
 
             st.bar_chart({
                 "Communication": 8,
@@ -435,32 +488,116 @@ if page == "🛡 Guardrails":
 
     st.title("🛡 AI Guardrails")
 
-    st.toggle(
+    named_detection = st.toggle(
         "Named Individual Detection",
-        value=True
+        value=st.session_state.guardrails[
+            "named_detection"
+        ]
     )
 
-    st.toggle(
+    burnout_detection = st.toggle(
         "Burnout Detection",
-        value=True
+        value=st.session_state.guardrails[
+            "burnout_detection"
+        ]
     )
 
-    st.toggle(
+    sensitive_hr = st.toggle(
         "Sensitive HR Content",
-        value=True
+        value=st.session_state.guardrails[
+            "sensitive_hr"
+        ]
     )
 
-    st.slider(
+    confidence_threshold = st.slider(
         "Minimum Confidence Threshold",
         0,
         100,
-        70
+        st.session_state.guardrails[
+            "confidence_threshold"
+        ]
     )
 
-    st.warning(
-        "Low-confidence AI outputs "
-        "require Scrum Master review."
+    st.session_state.guardrails = {
+        "named_detection": named_detection,
+        "burnout_detection": burnout_detection,
+        "sensitive_hr": sensitive_hr,
+        "confidence_threshold": confidence_threshold
+    }
+
+    st.success(
+        "✅ Guardrail settings updated"
     )
+
+    st.divider()
+
+    st.subheader("Active Protections")
+
+    if named_detection:
+        st.info(
+            "👤 Named individual detection enabled"
+        )
+
+    if burnout_detection:
+        st.info(
+            "🔥 Burnout detection enabled"
+        )
+
+    if sensitive_hr:
+        st.info(
+            "⚠ Sensitive HR filtering enabled"
+        )
+
+    st.warning(
+        f"AI outputs below "
+        f"{confidence_threshold}% confidence "
+        f"require Scrum Master review."
+    )
+
+    st.subheader("Risk Detection Preview")
+
+    sample_text = st.text_area(
+        "Test guardrails with sample retro feedback",
+        placeholder=(
+            "Example:\n"
+            "Team feels burnout due to deployment delays"
+        ),
+        height=120
+    )
+
+    if sample_text:
+
+        sample_lower = sample_text.lower()
+
+        if sensitive_hr:
+
+            if any(
+                word in sample_lower
+                for word in sensitive_keywords
+            ):
+
+                st.error(
+                    "🚨 Sensitive HR content detected"
+                )
+
+        if burnout_detection:
+
+            if any(
+                word in sample_lower
+                for word in burnout_keywords
+            ):
+
+                st.warning(
+                    "🔥 Burnout risk detected"
+                )
+
+        if named_detection:
+
+            if "manager" in sample_lower:
+
+                st.warning(
+                    "👤 Potential named individual reference detected"
+                )
 
 # =================================================
 # SCREEN 4 — HITL REVIEW
@@ -514,6 +651,7 @@ if page == "🧠 HITL Review":
                                 "smooth"
                             ]
                         ):
+
                             ai_sentiment = "Positive"
                             ai_theme = "Delivery"
 
@@ -526,16 +664,13 @@ if page == "🧠 HITL Review":
                                 "stress"
                             ]
                         ):
+
                             ai_sentiment = "Negative"
                             ai_theme = "Team Health"
 
-                        with st.container(
-                            border=True
-                        ):
+                        with st.container(border=True):
 
-                            st.write(
-                                f"📝 {item}"
-                            )
+                            st.write(f"📝 {item}")
 
                             col1, col2 = st.columns(2)
 
@@ -649,6 +784,7 @@ if page == "📝 Feedback Survey":
     if st.button(
         "Submit Feedback"
     ):
+
         st.success(
             "Feedback Submitted"
         )
@@ -735,11 +871,13 @@ if page == "⚙ Admin Dashboard":
             )
 
             if hallucination_rate > 5:
+
                 st.error(
                     "⚠ Hallucination rate above threshold"
                 )
 
             if override_rate > 25:
+
                 st.error(
                     "⚠ Override rate too high"
                 )
@@ -749,12 +887,9 @@ if page == "⚙ Admin Dashboard":
                 "and override rates"
             )
 
-            if st.button(
-                "🔴 DISABLE AI"
-            ):
-                st.error(
-                    "AI Disabled"
-                )
+            if st.button("🔴 DISABLE AI"):
+
+                st.error("AI Disabled")
 
         else:
 
