@@ -4,54 +4,148 @@ from groq import Groq
 import pandas as pd
 import json
 
-# 1. Initialize Connections
+# -----------------------------------
+# PAGE CONFIG
+# -----------------------------------
+st.set_page_config(
+    page_title="Synkr - Team Health Dashboard",
+    page_icon="📊",
+    layout="wide"
+)
+
+st.title("📊 Synkr: Team Health Dashboard")
+
+# -----------------------------------
+# INITIALIZE CONNECTIONS
+# -----------------------------------
 conn = st.connection(
-    "supabase", 
+    "supabase",
     type=SupabaseConnection,
     url=st.secrets["SUPABASE_URL"],
     key=st.secrets["SUPABASE_KEY"]
 )
+
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-st.title("Synkr: Team Health Dashboard")
+# -----------------------------------
+# LOAD EXISTING DATA
+# -----------------------------------
+try:
+    rows = conn.table("retrospectives").select("*").execute()
 
-# 2. THE SUMMARY SECTION (Slide 2: Team Sentiment Summary)
-# This displays the dashboard metrics first [cite: 241, 242]
-rows = conn.table("retrospectives").select("*").execute()
+    if rows.data:
+        df = pd.DataFrame(rows.data)
 
-if rows.data:
-    df = pd.DataFrame(rows.data)
-    st.subheader("Team Sentiment Summary")
-    
-    # Calculate percentages for the summary [cite: 52, 53, 54, 55]
-    counts = df['sentiment'].value_counts(normalize=True) * 100
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Positive", f"{counts.get('Positive', 0):.0f}%")
-    col2.metric("Neutral", f"{counts.get('Neutral', 0):.0f}%")
-    col3.metric("Negative", f"{counts.get('Negative', 0):.0f}%")
+        st.subheader("Team Sentiment Summary")
 
-    # Display the risk signals and themes [cite: 56, 148]
-    st.dataframe(df[['content', 'sentiment', 'theme', 'risk_level']].tail(10)) 
+        # Sentiment percentages
+        counts = df["sentiment"].value_counts(normalize=True) * 100
+
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric(
+            "Positive",
+            f"{counts.get('Positive', 0):.0f}%"
+        )
+
+        col2.metric(
+            "Neutral",
+            f"{counts.get('Neutral', 0):.0f}%"
+        )
+
+        col3.metric(
+            "Negative",
+            f"{counts.get('Negative', 0):.0f}%"
+        )
+
+        st.divider()
+
+        st.subheader("Recent Feedback")
+
+        st.dataframe(
+            df[
+                ["content", "sentiment", "theme", "risk_level"]
+            ].tail(10),
+            use_container_width=True
+        )
+
+    else:
+        st.info("No retrospective feedback found yet.")
+
+except Exception as e:
+    st.error(f"Error loading dashboard data: {e}")
 
 st.divider()
 
-# 3. THE INPUT BOX (Slide 8: Step 1 - Retro Submission)
-# Form resets after submit, keeping the dashboard ready for "another one" 
+# -----------------------------------
+# INPUT FORM
+# -----------------------------------
+st.subheader("Submit Retro Feedback")
+
 with st.form("retro_input", clear_on_submit=True):
-    user_input = st.text_area("Paste your retro feedback here...") [cite: 414]
-    submitted = st.form_submit_button("Analyze Feedback →") [cite: 416]
+
+    user_input = st.text_area(
+        "Paste your retro feedback here...",
+        height=150
+    )
+
+    submitted = st.form_submit_button("Analyze Feedback →")
 
     if submitted and user_input:
-        # 1. AI Processing (Groq) logic goes here...
-        
-        # 2. Insert into Supabase
-        conn.table("retrospectives").insert({
-            "content": user_input,
-            "sentiment": ai_sentiment,
-            "theme": ai_theme,
-            "risk_level": ai_risk
-        }).execute()
-        
-        # 3. THE FIX: Update here
-        st.success("Analysis complete! Updating dashboard...")
-        st.rerun()  # This triggers the refresh to show the new metrics [cite: 469]
+
+        try:
+
+            # -----------------------------------
+            # AI ANALYSIS USING GROQ
+            # -----------------------------------
+            prompt = f"""
+            Analyze the following retrospective feedback.
+
+            Return ONLY valid JSON in this format:
+
+            {{
+              "sentiment": "Positive/Neutral/Negative",
+              "theme": "One short theme",
+              "risk_level": "Low/Medium/High"
+            }}
+
+            Feedback:
+            {user_input}
+            """
+
+            completion = client.chat.completions.create(
+                model="llama3-70b-8192",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.2
+            )
+
+            response_text = completion.choices[0].message.content
+
+            # Parse AI response
+            ai_response = json.loads(response_text)
+
+            ai_sentiment = ai_response.get("sentiment", "Neutral")
+            ai_theme = ai_response.get("theme", "General")
+            ai_risk = ai_response.get("risk_level", "Low")
+
+            # -----------------------------------
+            # SAVE TO SUPABASE
+            # -----------------------------------
+            conn.table("retrospectives").insert({
+                "content": user_input,
+                "sentiment": ai_sentiment,
+                "theme": ai_theme,
+                "risk_level": ai_risk
+            }).execute()
+
+            st.success("✅ Analysis complete! Dashboard updated.")
+
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"Error analyzing feedback: {e}")
