@@ -4,7 +4,13 @@ from groq import Groq
 import pandas as pd
 
 # 1. Initialize Connections
-conn = st.connection("supabase", type=SupabaseConnection)
+# Force the connection to use the secrets explicitly
+conn = st.connection(
+    "supabase", 
+    type=SupabaseConnection,
+    url=st.secrets["connections"]["supabase"]["url"],
+    key=st.secrets["connections"]["supabase"]["key"]
+)
 client = Groq(api_key=st.secrets["groq"]["api_key"])
 
 st.title("Synkr: Team Health Dashboard")
