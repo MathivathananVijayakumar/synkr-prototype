@@ -57,7 +57,8 @@ positive_keywords = [
     "smooth",
     "improved",
     "happy",
-    "fast"
+    "fast",
+    "successful"
 ]
 
 negative_keywords = [
@@ -283,17 +284,6 @@ if page == "🏠 Retro Analysis":
                         "content": response
                     }).execute()
 
-                    # =========================================
-                    # SAVE METRICS
-                    # =========================================
-                    conn.table("ai_metrics").insert({
-                        "team_name": team_name,
-                        "latency": latency,
-                        "confidence": 82,
-                        "hallucination_flag": False,
-                        "override_flag": False
-                    }).execute()
-
                     st.success(
                         "✅ Analysis Complete"
                     )
@@ -316,7 +306,6 @@ if page == "🏠 Retro Analysis":
 
                             sentiment = "Neutral"
                             risk = "Medium"
-                            confidence = 75
                             theme = "Delivery"
 
                             # =====================================
@@ -355,7 +344,6 @@ if page == "🏠 Retro Analysis":
 
                                 sentiment = "Positive"
                                 risk = "Low"
-                                confidence = 90
 
                             elif any(
                                 word in item_lower
@@ -364,7 +352,48 @@ if page == "🏠 Retro Analysis":
 
                                 sentiment = "Negative"
                                 risk = "High"
-                                confidence = 82
+
+                            # =====================================
+                            # DYNAMIC CONFIDENCE
+                            # =====================================
+                            confidence = 65
+
+                            if len(item.split()) > 8:
+                                confidence += 10
+
+                            if any(
+                                word in item_lower
+                                for word in positive_keywords
+                            ):
+                                confidence += 10
+
+                            if any(
+                                word in item_lower
+                                for word in negative_keywords
+                            ):
+                                confidence += 5
+
+                            if any(
+                                word in item_lower
+                                for word in burnout_keywords
+                            ):
+                                confidence -= 5
+
+                            confidence = max(
+                                min(confidence, 95),
+                                50
+                            )
+
+                            # =====================================
+                            # SAVE AI METRICS
+                            # =====================================
+                            conn.table("ai_metrics").insert({
+                                "team_name": team_name,
+                                "latency": latency,
+                                "confidence": confidence,
+                                "hallucination_flag": False,
+                                "override_flag": False
+                            }).execute()
 
                             # =====================================
                             # SAVE ANALYSIS
@@ -383,7 +412,29 @@ if page == "🏠 Retro Analysis":
 
                             }).execute()
 
+                            threshold = guardrails[
+                                "confidence_threshold"
+                            ]
+
                             with st.container(border=True):
+
+                                if confidence >= threshold:
+
+                                    st.success(
+                                        "🟢 High Confidence"
+                                    )
+
+                                elif confidence >= 60:
+
+                                    st.warning(
+                                        "🟠 Suggested — Review Before Use"
+                                    )
+
+                                else:
+
+                                    st.error(
+                                        "🔴 AI Unsure"
+                                    )
 
                                 st.write(item)
 
@@ -502,9 +553,6 @@ if page == "📊 Team Dashboard":
 
             st.bar_chart(theme_counts)
 
-            # =========================================
-            # RECENT FEEDBACK
-            # =========================================
             st.subheader(
                 "📝 Recent Sprint Feedback"
             )
@@ -564,98 +612,7 @@ if page == "🛡 Guardrails":
         "confidence_threshold": confidence_threshold
     }
 
-    st.success(
-        "✅ Guardrails Updated"
-    )
-
-    st.divider()
-
-    sample_text = st.text_area(
-        "Test guardrails",
-        key="guardrail_test"
-    )
-
-    if sample_text:
-
-        if any(
-            word in sample_text.lower()
-            for word in burnout_keywords
-        ):
-
-            st.warning(
-                "🔥 Burnout risk detected"
-            )
-
-        if any(
-            word in sample_text.lower()
-            for word in sensitive_keywords
-        ):
-
-            st.error(
-                "🚨 Sensitive HR content detected"
-            )
-
-        if "manager" in sample_text.lower():
-
-            st.warning(
-                "👤 Named individual detected"
-            )
-
-    st.divider()
-
-    # =============================================
-    # GUARDRAIL ANALYTICS
-    # =============================================
-    st.subheader(
-        "📊 Guardrail Analytics"
-    )
-
-    try:
-
-        guardrail_rows = conn.table(
-            "guardrail_events"
-        ).select("*").execute()
-
-        if guardrail_rows.data:
-
-            guardrail_df = pd.DataFrame(
-                guardrail_rows.data
-            )
-
-            st.metric(
-                "Total Guardrail Events",
-                len(guardrail_df)
-            )
-
-            st.subheader(
-                "Guardrail Type Distribution"
-            )
-
-            guardrail_counts = (
-                guardrail_df[
-                    "guardrail_type"
-                ]
-                .value_counts()
-            )
-
-            st.bar_chart(
-                guardrail_counts
-            )
-
-            st.subheader(
-                "Recent Guardrail Events"
-            )
-
-            st.dataframe(
-                guardrail_df.tail(10),
-                width="stretch"
-            )
-
-    except Exception as e:
-
-        st.error(
-            f"Guardrail Analytics Error: {e}"
-        )
+    st.success("✅ Guardrails Updated")
 
 # =================================================
 # HITL REVIEW
@@ -700,65 +657,6 @@ if page == "🧠 HITL Review":
                         "Confidence",
                         f"{row['confidence']}%"
                     )
-
-                    corrected_sentiment = st.selectbox(
-                        "Correct Sentiment",
-                        [
-                            "Positive",
-                            "Neutral",
-                            "Negative"
-                        ],
-                        key=f"sent_{index}"
-                    )
-
-                    corrected_theme = st.selectbox(
-                        "Correct Theme",
-                        [
-                            "Deployment",
-                            "Communication",
-                            "Planning",
-                            "Testing",
-                            "Team Health",
-                            "Delivery"
-                        ],
-                        key=f"theme_{index}"
-                    )
-
-                    if st.button(
-                        "Submit Review",
-                        key=f"review_{index}"
-                    ):
-
-                        conn.table(
-                            "hitl_reviews"
-                        ).insert({
-
-                            "feedback":
-                            row["feedback"],
-
-                            "ai_sentiment":
-                            row["sentiment"],
-
-                            "corrected_sentiment":
-                            corrected_sentiment,
-
-                            "ai_theme":
-                            row["theme"],
-
-                            "corrected_theme":
-                            corrected_theme,
-
-                            "reviewer":
-                            "Reviewer",
-
-                            "status":
-                            "Reviewed"
-
-                        }).execute()
-
-                        st.success(
-                            "✅ Review Submitted"
-                        )
 
     except Exception as e:
 
