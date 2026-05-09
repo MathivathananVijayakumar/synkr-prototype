@@ -168,23 +168,6 @@ if page == "🏠 Retro Analysis":
             )
 
     # =================================================
-    # QUALITY CHECK
-    # =================================================
-    lines = retro_text.split("\n")
-
-    short_lines = [
-        line for line in lines
-        if len(line.split()) < 5
-    ]
-
-    if len(short_lines) > 2:
-
-        st.warning(
-            "⚠ Feedback quality may be too low "
-            "for reliable AI analysis."
-        )
-
-    # =================================================
     # ANALYZE
     # =================================================
     if st.button("Analyze Feedback"):
@@ -264,9 +247,8 @@ if page == "🏠 Retro Analysis":
                         "📋 Feedback Analysis"
                     )
 
-                    # =========================================
-                    # FEEDBACK CARDS
-                    # =========================================
+                    lines = retro_text.split("\n")
+
                     for item in lines:
 
                         if item.strip():
@@ -453,9 +435,6 @@ if page == "📊 Team Dashboard":
 
             st.divider()
 
-            # =============================================
-            # SENTIMENT TRENDS
-            # =============================================
             st.subheader("📈 Sentiment Trends")
 
             sentiment_data = []
@@ -486,9 +465,6 @@ if page == "📊 Team Dashboard":
                 chart_data.set_index("Feedback")
             )
 
-            # =============================================
-            # REAL THEME DISTRIBUTION
-            # =============================================
             st.subheader("📊 Theme Distribution")
 
             theme_counts = (
@@ -498,9 +474,6 @@ if page == "📊 Team Dashboard":
 
             st.bar_chart(theme_counts)
 
-            # =============================================
-            # RECENT FEEDBACK
-            # =============================================
             st.subheader(
                 "📝 Recent Sprint Feedback"
             )
@@ -619,6 +592,11 @@ if page == "🧠 HITL Review":
 
     st.title("🧠 Human-in-the-Loop Review")
 
+    reviewer_name = st.text_input(
+        "Reviewer Name",
+        placeholder="Enter reviewer name"
+    )
+
     try:
 
         rows = conn.table(
@@ -629,9 +607,22 @@ if page == "🧠 HITL Review":
 
             df = pd.DataFrame(rows.data)
 
+            st.subheader(
+                "Pending AI Reviews"
+            )
+
             latest = df.tail(5)
 
             for index, row in latest.iterrows():
+
+                confidence = row["confidence"]
+
+                review_required = (
+                    confidence <
+                    st.session_state.guardrails[
+                        "confidence_threshold"
+                    ]
+                )
 
                 with st.container(border=True):
 
@@ -639,7 +630,7 @@ if page == "🧠 HITL Review":
                         f"📝 {row['feedback']}"
                     )
 
-                    col1, col2 = st.columns(2)
+                    col1, col2, col3 = st.columns(3)
 
                     col1.metric(
                         "AI Sentiment",
@@ -651,6 +642,25 @@ if page == "🧠 HITL Review":
                         row["theme"]
                     )
 
+                    col3.metric(
+                        "Confidence",
+                        f"{confidence}%"
+                    )
+
+                    if review_required:
+
+                        st.warning(
+                            "⚠ Manual review required"
+                        )
+
+                    else:
+
+                        st.success(
+                            "✅ High confidence AI output"
+                        )
+
+                    st.divider()
+
                     corrected_sentiment = (
                         st.selectbox(
                             "Correct Sentiment",
@@ -659,33 +669,193 @@ if page == "🧠 HITL Review":
                                 "Neutral",
                                 "Negative"
                             ],
+                            index=[
+                                "Positive",
+                                "Neutral",
+                                "Negative"
+                            ].index(
+                                row["sentiment"]
+                            ),
                             key=f"sent_{index}"
                         )
                     )
 
-                    if st.button(
-                        "Submit Correction",
-                        key=f"btn_{index}"
-                    ):
-
-                        override_flag = (
-                            corrected_sentiment
-                            != row["sentiment"]
+                    corrected_theme = (
+                        st.selectbox(
+                            "Correct Theme",
+                            [
+                                "Deployment",
+                                "Communication",
+                                "Planning",
+                                "Testing",
+                                "Team Health",
+                                "Delivery"
+                            ],
+                            index=[
+                                "Deployment",
+                                "Communication",
+                                "Planning",
+                                "Testing",
+                                "Team Health",
+                                "Delivery"
+                            ].index(
+                                row["theme"]
+                            ),
+                            key=f"theme_{index}"
                         )
+                    )
 
-                        conn.table(
-                            "ai_metrics"
-                        ).insert({
-                            "team_name": row["team_name"],
-                            "latency": 0,
-                            "confidence": row["confidence"],
-                            "hallucination_flag": False,
-                            "override_flag": override_flag
-                        }).execute()
+                    col1, col2 = st.columns(2)
 
-                        st.success(
-                            "✅ Correction Saved"
-                        )
+                    with col1:
+
+                        if st.button(
+                            "Approve AI",
+                            key=f"approve_{index}"
+                        ):
+
+                            conn.table(
+                                "hitl_reviews"
+                            ).insert({
+
+                                "feedback":
+                                row["feedback"],
+
+                                "ai_sentiment":
+                                row["sentiment"],
+
+                                "corrected_sentiment":
+                                corrected_sentiment,
+
+                                "ai_theme":
+                                row["theme"],
+
+                                "corrected_theme":
+                                corrected_theme,
+
+                                "reviewer":
+                                reviewer_name,
+
+                                "status":
+                                "Approved"
+
+                            }).execute()
+
+                            st.success(
+                                "✅ Review Approved"
+                            )
+
+                    with col2:
+
+                        if st.button(
+                            "Override AI",
+                            key=f"override_{index}"
+                        ):
+
+                            conn.table(
+                                "hitl_reviews"
+                            ).insert({
+
+                                "feedback":
+                                row["feedback"],
+
+                                "ai_sentiment":
+                                row["sentiment"],
+
+                                "corrected_sentiment":
+                                corrected_sentiment,
+
+                                "ai_theme":
+                                row["theme"],
+
+                                "corrected_theme":
+                                corrected_theme,
+
+                                "reviewer":
+                                reviewer_name,
+
+                                "status":
+                                "Overridden"
+
+                            }).execute()
+
+                            conn.table(
+                                "ai_metrics"
+                            ).insert({
+
+                                "team_name":
+                                row["team_name"],
+
+                                "latency": 0,
+
+                                "confidence":
+                                row["confidence"],
+
+                                "hallucination_flag":
+                                False,
+
+                                "override_flag":
+                                True
+
+                            }).execute()
+
+                            st.warning(
+                                "⚠ AI Override Recorded"
+                            )
+
+            st.divider()
+
+            # =========================================
+            # REVIEW ANALYTICS
+            # =========================================
+            st.subheader(
+                "📊 HITL Analytics"
+            )
+
+            review_rows = conn.table(
+                "hitl_reviews"
+            ).select("*").execute()
+
+            if review_rows.data:
+
+                review_df = pd.DataFrame(
+                    review_rows.data
+                )
+
+                approved_count = len(
+                    review_df[
+                        review_df["status"]
+                        == "Approved"
+                    ]
+                )
+
+                overridden_count = len(
+                    review_df[
+                        review_df["status"]
+                        == "Overridden"
+                    ]
+                )
+
+                col1, col2 = st.columns(2)
+
+                col1.metric(
+                    "Approved AI Decisions",
+                    approved_count
+                )
+
+                col2.metric(
+                    "AI Overrides",
+                    overridden_count
+                )
+
+                st.subheader(
+                    "Recent Reviews"
+                )
+
+                st.dataframe(
+                    review_df.tail(10),
+                    width="stretch"
+                )
 
         else:
 
