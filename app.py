@@ -1,12 +1,13 @@
-# ================================
-# Synkr AI Dashboard - app.py
-# ================================
+# =========================================================
+# Synkr AI Dashboard - Fully Dynamic AI Version
+# =========================================================
 
 import streamlit as st
 from groq import Groq
 from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import time
+import json
 
 # =================================================
 # PAGE CONFIG
@@ -50,51 +51,6 @@ burnout_keywords = [
     "overworked"
 ]
 
-positive_keywords = [
-    "good",
-    "great",
-    "excellent",
-    "smooth",
-    "improved",
-    "happy",
-    "fast"
-]
-
-negative_keywords = [
-    "delay",
-    "blocked",
-    "issue",
-    "problem",
-    "failure",
-    "stress",
-    "burnout"
-]
-
-# =================================================
-# SYSTEM PROMPT
-# =================================================
-system_prompt = """
-You are Synkr AI.
-
-Analyze sprint retrospective feedback.
-
-Identify:
-- sentiment
-- theme
-- risk level
-- actionable insight
-
-Possible themes:
-- Deployment
-- Communication
-- Planning
-- Testing
-- Team Health
-- Delivery
-
-Be concise and practical.
-"""
-
 # =================================================
 # SESSION STATE
 # =================================================
@@ -130,6 +86,7 @@ if page == "🏠 Retro Analysis":
     st.title("🤖 Synkr Retro Analysis")
 
     sprint_name = st.text_input("Sprint Name")
+
     team_name = st.text_input("Team Name")
 
     retro_text = st.text_area(
@@ -138,96 +95,8 @@ if page == "🏠 Retro Analysis":
         placeholder="One feedback item per line"
     )
 
-    guardrails = st.session_state.guardrails
-
     # =================================================
-    # GUARDRAIL DETECTION
-    # =================================================
-    if retro_text:
-
-        # ---------------------------------------------
-        # Sensitive HR
-        # ---------------------------------------------
-        if (
-            guardrails["sensitive_hr"]
-            and any(
-                word in retro_text.lower()
-                for word in sensitive_keywords
-            )
-        ):
-
-            st.error(
-                "🚨 Sensitive HR-related content detected"
-            )
-
-            conn.table(
-                "guardrail_events"
-            ).insert({
-
-                "sprint_name": sprint_name,
-                "team_name": team_name,
-                "feedback": retro_text,
-                "guardrail_type": "Sensitive HR Content",
-                "severity": "High",
-                "reviewer_required": True
-
-            }).execute()
-
-        # ---------------------------------------------
-        # Burnout
-        # ---------------------------------------------
-        if (
-            guardrails["burnout_detection"]
-            and any(
-                word in retro_text.lower()
-                for word in burnout_keywords
-            )
-        ):
-
-            st.warning(
-                "🔥 Burnout risk detected"
-            )
-
-            conn.table(
-                "guardrail_events"
-            ).insert({
-
-                "sprint_name": sprint_name,
-                "team_name": team_name,
-                "feedback": retro_text,
-                "guardrail_type": "Burnout Detection",
-                "severity": "Medium",
-                "reviewer_required": True
-
-            }).execute()
-
-        # ---------------------------------------------
-        # Named Detection
-        # ---------------------------------------------
-        if (
-            guardrails["named_detection"]
-            and "manager" in retro_text.lower()
-        ):
-
-            st.warning(
-                "👤 Potential named individual reference detected"
-            )
-
-            conn.table(
-                "guardrail_events"
-            ).insert({
-
-                "sprint_name": sprint_name,
-                "team_name": team_name,
-                "feedback": retro_text,
-                "guardrail_type": "Named Individual",
-                "severity": "Medium",
-                "reviewer_required": False
-
-            }).execute()
-
-    # =================================================
-    # ANALYZE
+    # ANALYZE BUTTON
     # =================================================
     if st.button("Analyze Feedback"):
 
@@ -241,25 +110,65 @@ if page == "🏠 Retro Analysis":
 
                     start_time = time.time()
 
+                    # =========================================
+                    # DYNAMIC AI PROMPT
+                    # =========================================
+                    analysis_prompt = f"""
+You are Synkr AI.
+
+Analyze sprint retrospective feedback.
+
+Return ONLY valid JSON.
+
+Expected format:
+
+{{
+  "items": [
+    {{
+      "feedback": "string",
+      "sentiment": "Positive | Neutral | Negative",
+      "theme": "Deployment | Communication | Planning | Testing | Team Health | Delivery",
+      "risk_level": "Low | Medium | High",
+      "confidence": number,
+      "insight": "short actionable insight"
+    }}
+  ]
+}}
+
+Rules:
+- confidence between 50 and 95
+- valid parsable JSON only
+- no markdown
+- no explanations outside JSON
+
+Feedback:
+{retro_text}
+"""
+
+                    # =========================================
+                    # MODEL CALL
+                    # =========================================
                     completion = (
                         client.chat.completions.create(
                             model="llama-3.1-8b-instant",
                             messages=[
                                 {
                                     "role": "system",
-                                    "content": system_prompt
+                                    "content":
+                                    "You are a JSON-only AI assistant."
                                 },
                                 {
                                     "role": "user",
-                                    "content": retro_text
+                                    "content":
+                                    analysis_prompt
                                 }
                             ],
-                            temperature=0.4,
-                            max_tokens=1024
+                            temperature=0.2,
+                            max_tokens=1500
                         )
                     )
 
-                    response = (
+                    response_text = (
                         completion
                         .choices[0]
                         .message.content
@@ -271,7 +180,16 @@ if page == "🏠 Retro Analysis":
                     )
 
                     # =========================================
-                    # SAVE CHAT
+                    # PARSE JSON
+                    # =========================================
+                    parsed = json.loads(
+                        response_text
+                    )
+
+                    items = parsed["items"]
+
+                    # =========================================
+                    # SAVE CHAT HISTORY
                     # =========================================
                     conn.table("chat_history").insert({
                         "role": "user",
@@ -280,140 +198,269 @@ if page == "🏠 Retro Analysis":
 
                     conn.table("chat_history").insert({
                         "role": "assistant",
-                        "content": response
-                    }).execute()
-
-                    # =========================================
-                    # SAVE METRICS
-                    # =========================================
-                    conn.table("ai_metrics").insert({
-                        "team_name": team_name,
-                        "latency": latency,
-                        "confidence": 82,
-                        "hallucination_flag": False,
-                        "override_flag": False
+                        "content": response_text
                     }).execute()
 
                     st.success(
-                        "✅ Analysis Complete"
+                        "✅ AI Analysis Complete"
                     )
-
-                    st.markdown(response)
 
                     st.divider()
 
                     st.subheader(
-                        "📋 Feedback Analysis"
+                        "📋 AI Feedback Analysis"
                     )
 
-                    lines = retro_text.split("\n")
+                    # =========================================
+                    # PROCESS AI OUTPUT
+                    # =========================================
+                    for item in items:
 
-                    for item in lines:
+                        feedback = item["feedback"]
 
-                        if item.strip():
+                        sentiment = item["sentiment"]
 
-                            item_lower = item.lower()
+                        theme = item["theme"]
 
-                            sentiment = "Neutral"
-                            risk = "Medium"
-                            confidence = 75
-                            theme = "Delivery"
+                        risk_level = item["risk_level"]
 
-                            # =====================================
-                            # THEME DETECTION
-                            # =====================================
-                            if "deploy" in item_lower:
+                        confidence = item["confidence"]
 
-                                theme = "Deployment"
+                        insight = item["insight"]
 
-                            elif "communicat" in item_lower:
+                        # =====================================
+                        # SAVE ANALYSIS
+                        # =====================================
+                        conn.table(
+                            "retro_analysis"
+                        ).insert({
 
-                                theme = "Communication"
+                            "sprint_name":
+                            sprint_name,
 
-                            elif "plan" in item_lower:
+                            "team_name":
+                            team_name,
 
-                                theme = "Planning"
+                            "feedback":
+                            feedback,
 
-                            elif "test" in item_lower:
+                            "sentiment":
+                            sentiment,
 
-                                theme = "Testing"
+                            "theme":
+                            theme,
 
-                            elif any(
-                                word in item_lower
+                            "risk_level":
+                            risk_level,
+
+                            "confidence":
+                            confidence
+
+                        }).execute()
+
+                        # =====================================
+                        # SAVE METRICS
+                        # =====================================
+                        conn.table(
+                            "ai_metrics"
+                        ).insert({
+
+                            "team_name":
+                            team_name,
+
+                            "latency":
+                            latency,
+
+                            "confidence":
+                            confidence,
+
+                            "hallucination_flag":
+                            False,
+
+                            "override_flag":
+                            False
+
+                        }).execute()
+
+                        # =====================================
+                        # GUARDRAILS
+                        # =====================================
+                        feedback_lower = (
+                            feedback.lower()
+                        )
+
+                        if (
+                            st.session_state
+                            .guardrails[
+                                "burnout_detection"
+                            ]
+                        ):
+
+                            if any(
+                                word in feedback_lower
                                 for word in burnout_keywords
                             ):
 
-                                theme = "Team Health"
+                                conn.table(
+                                    "guardrail_events"
+                                ).insert({
 
-                            # =====================================
-                            # SENTIMENT
-                            # =====================================
+                                    "sprint_name":
+                                    sprint_name,
+
+                                    "team_name":
+                                    team_name,
+
+                                    "feedback":
+                                    feedback,
+
+                                    "guardrail_type":
+                                    "Burnout Detection",
+
+                                    "severity":
+                                    "Medium",
+
+                                    "reviewer_required":
+                                    True
+
+                                }).execute()
+
+                        if (
+                            st.session_state
+                            .guardrails[
+                                "sensitive_hr"
+                            ]
+                        ):
+
                             if any(
-                                word in item_lower
-                                for word in positive_keywords
+                                word in feedback_lower
+                                for word in sensitive_keywords
                             ):
 
-                                sentiment = "Positive"
-                                risk = "Low"
-                                confidence = 90
+                                conn.table(
+                                    "guardrail_events"
+                                ).insert({
 
-                            elif any(
-                                word in item_lower
-                                for word in negative_keywords
-                            ):
+                                    "sprint_name":
+                                    sprint_name,
 
-                                sentiment = "Negative"
-                                risk = "High"
-                                confidence = 82
+                                    "team_name":
+                                    team_name,
 
-                            # =====================================
-                            # SAVE ANALYSIS
-                            # =====================================
-                            conn.table(
-                                "retro_analysis"
-                            ).insert({
+                                    "feedback":
+                                    feedback,
 
-                                "sprint_name": sprint_name,
-                                "team_name": team_name,
-                                "feedback": item,
-                                "sentiment": sentiment,
-                                "theme": theme,
-                                "risk_level": risk,
-                                "confidence": confidence
+                                    "guardrail_type":
+                                    "Sensitive HR Content",
 
-                            }).execute()
+                                    "severity":
+                                    "High",
 
-                            with st.container(border=True):
+                                    "reviewer_required":
+                                    True
 
-                                st.write(item)
+                                }).execute()
 
-                                col1, col2, col3, col4 = (
-                                    st.columns(4)
+                        if (
+                            st.session_state
+                            .guardrails[
+                                "named_detection"
+                            ]
+                        ):
+
+                            if "manager" in feedback_lower:
+
+                                conn.table(
+                                    "guardrail_events"
+                                ).insert({
+
+                                    "sprint_name":
+                                    sprint_name,
+
+                                    "team_name":
+                                    team_name,
+
+                                    "feedback":
+                                    feedback,
+
+                                    "guardrail_type":
+                                    "Named Individual",
+
+                                    "severity":
+                                    "Medium",
+
+                                    "reviewer_required":
+                                    False
+
+                                }).execute()
+
+                        # =====================================
+                        # UI DISPLAY
+                        # =====================================
+                        threshold = (
+                            st.session_state
+                            .guardrails[
+                                "confidence_threshold"
+                            ]
+                        )
+
+                        with st.container(border=True):
+
+                            if confidence >= threshold:
+
+                                st.success(
+                                    "🟢 High Confidence"
                                 )
 
-                                col1.metric(
-                                    "Sentiment",
-                                    sentiment
+                            elif confidence >= 60:
+
+                                st.warning(
+                                    "🟠 Suggested — Review Before Use"
                                 )
 
-                                col2.metric(
-                                    "Theme",
-                                    theme
+                            else:
+
+                                st.error(
+                                    "🔴 Manual Review Required"
                                 )
 
-                                col3.metric(
-                                    "Risk",
-                                    risk
-                                )
+                            st.write(
+                                f"📝 {feedback}"
+                            )
 
-                                col4.metric(
-                                    "Confidence",
-                                    f"{confidence}%"
-                                )
+                            st.info(
+                                f"💡 Insight: {insight}"
+                            )
+
+                            col1, col2, col3, col4 = (
+                                st.columns(4)
+                            )
+
+                            col1.metric(
+                                "Sentiment",
+                                sentiment
+                            )
+
+                            col2.metric(
+                                "Theme",
+                                theme
+                            )
+
+                            col3.metric(
+                                "Risk",
+                                risk_level
+                            )
+
+                            col4.metric(
+                                "Confidence",
+                                f"{confidence}%"
+                            )
 
                 except Exception as e:
 
-                    st.error(f"AI Error: {e}")
+                    st.error(
+                        f"AI Analysis Error: {e}"
+                    )
 
 # =================================================
 # TEAM DASHBOARD
@@ -472,7 +519,7 @@ if page == "📊 Team Dashboard":
             st.divider()
 
             # =========================================
-            # SPRINT SENTIMENT TRENDS
+            # SENTIMENT TRENDS
             # =========================================
             st.subheader(
                 "📈 Sprint Sentiment Trends"
@@ -502,9 +549,6 @@ if page == "📊 Team Dashboard":
 
             st.bar_chart(theme_counts)
 
-            # =========================================
-            # RECENT FEEDBACK
-            # =========================================
             st.subheader(
                 "📝 Recent Sprint Feedback"
             )
@@ -512,6 +556,12 @@ if page == "📊 Team Dashboard":
             st.dataframe(
                 df.tail(10),
                 width="stretch"
+            )
+
+        else:
+
+            st.info(
+                "No dashboard data yet."
             )
 
     except Exception as e:
@@ -558,10 +608,17 @@ if page == "🛡 Guardrails":
     )
 
     st.session_state.guardrails = {
-        "named_detection": named_detection,
-        "burnout_detection": burnout_detection,
-        "sensitive_hr": sensitive_hr,
-        "confidence_threshold": confidence_threshold
+        "named_detection":
+        named_detection,
+
+        "burnout_detection":
+        burnout_detection,
+
+        "sensitive_hr":
+        sensitive_hr,
+
+        "confidence_threshold":
+        confidence_threshold
     }
 
     st.success(
@@ -570,46 +627,9 @@ if page == "🛡 Guardrails":
 
     st.divider()
 
-    sample_text = st.text_area(
-        "Test guardrails",
-        key="guardrail_test"
-    )
-
-    if sample_text:
-
-        if any(
-            word in sample_text.lower()
-            for word in burnout_keywords
-        ):
-
-            st.warning(
-                "🔥 Burnout risk detected"
-            )
-
-        if any(
-            word in sample_text.lower()
-            for word in sensitive_keywords
-        ):
-
-            st.error(
-                "🚨 Sensitive HR content detected"
-            )
-
-        if "manager" in sample_text.lower():
-
-            st.warning(
-                "👤 Named individual detected"
-            )
-
-    st.divider()
-
     # =============================================
     # GUARDRAIL ANALYTICS
     # =============================================
-    st.subheader(
-        "📊 Guardrail Analytics"
-    )
-
     try:
 
         guardrail_rows = conn.table(
@@ -628,7 +648,7 @@ if page == "🛡 Guardrails":
             )
 
             st.subheader(
-                "Guardrail Type Distribution"
+                "Guardrail Distribution"
             )
 
             guardrail_counts = (
@@ -651,10 +671,16 @@ if page == "🛡 Guardrails":
                 width="stretch"
             )
 
+        else:
+
+            st.info(
+                "No guardrail events yet."
+            )
+
     except Exception as e:
 
         st.error(
-            f"Guardrail Analytics Error: {e}"
+            f"Guardrail Error: {e}"
         )
 
 # =================================================
@@ -662,7 +688,9 @@ if page == "🛡 Guardrails":
 # =================================================
 if page == "🧠 HITL Review":
 
-    st.title("🧠 Human-in-the-Loop Review")
+    st.title(
+        "🧠 Human-in-the-Loop Review"
+    )
 
     try:
 
@@ -684,7 +712,9 @@ if page == "🧠 HITL Review":
                         row["feedback"]
                     )
 
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2, col3 = (
+                        st.columns(3)
+                    )
 
                     col1.metric(
                         "Sentiment",
@@ -701,27 +731,31 @@ if page == "🧠 HITL Review":
                         f"{row['confidence']}%"
                     )
 
-                    corrected_sentiment = st.selectbox(
-                        "Correct Sentiment",
-                        [
-                            "Positive",
-                            "Neutral",
-                            "Negative"
-                        ],
-                        key=f"sent_{index}"
+                    corrected_sentiment = (
+                        st.selectbox(
+                            "Correct Sentiment",
+                            [
+                                "Positive",
+                                "Neutral",
+                                "Negative"
+                            ],
+                            key=f"sent_{index}"
+                        )
                     )
 
-                    corrected_theme = st.selectbox(
-                        "Correct Theme",
-                        [
-                            "Deployment",
-                            "Communication",
-                            "Planning",
-                            "Testing",
-                            "Team Health",
-                            "Delivery"
-                        ],
-                        key=f"theme_{index}"
+                    corrected_theme = (
+                        st.selectbox(
+                            "Correct Theme",
+                            [
+                                "Deployment",
+                                "Communication",
+                                "Planning",
+                                "Testing",
+                                "Team Health",
+                                "Delivery"
+                            ],
+                            key=f"theme_{index}"
+                        )
                     )
 
                     if st.button(
@@ -884,6 +918,12 @@ if page == "⚙ Admin Dashboard":
             )
 
             st.bar_chart(confidence_df)
+
+        else:
+
+            st.info(
+                "No admin metrics yet."
+            )
 
     except Exception as e:
 
