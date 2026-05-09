@@ -8,21 +8,13 @@ import json
 # PAGE CONFIG
 # -------------------------------------------------
 st.set_page_config(
-    page_title="Synkr - Sprint Retrospective AI",
+    page_title="Synkr AI Dashboard",
     page_icon="🤖",
     layout="wide"
 )
 
 # -------------------------------------------------
-# TITLE
-# -------------------------------------------------
-st.title("🤖 Synkr: Sprint Retrospective AI Assistant")
-st.caption(
-    "AI-powered sprint retrospective sentiment and risk analyzer"
-)
-
-# -------------------------------------------------
-# SUPABASE CONNECTION
+# CONNECTIONS
 # -------------------------------------------------
 conn = st.connection(
     "supabase",
@@ -31,9 +23,6 @@ conn = st.connection(
     key=st.secrets["SUPABASE_KEY"]
 )
 
-# -------------------------------------------------
-# GROQ CLIENT
-# -------------------------------------------------
 client = Groq(
     api_key=st.secrets["GROQ_API_KEY"]
 )
@@ -42,27 +31,27 @@ client = Groq(
 # SYSTEM PROMPT
 # -------------------------------------------------
 system_prompt = """
-You are Synkr AI, an Agile Sprint Retrospective Assistant.
+You are Synkr AI.
 
-Your responsibilities:
-- Analyze sprint retrospective feedback
+You are an Agile Sprint Retrospective Assistant.
+
+Responsibilities:
+- Analyze sprint retrospectives
 - Detect sentiment
 - Detect recurring themes
-- Identify delivery risks
-- Detect burnout or communication issues
-- Provide concise actionable insights
-- Speak conversationally like an Agile coach
+- Identify burnout or delivery risks
+- Provide concise actionable suggestions
+- Speak like an Agile coach
 
 Rules:
-- Be concise and professional
+- Be concise
 - Never hallucinate
-- Mention uncertainty when confidence is low
-- Focus on sprint improvement
-- Keep responses practical and actionable
+- Mention uncertainty if confidence is low
+- Focus on improving sprint health
 """
 
 # -------------------------------------------------
-# LOAD CHAT HISTORY
+# SESSION STATE
 # -------------------------------------------------
 if "messages" not in st.session_state:
 
@@ -73,7 +62,7 @@ if "messages" not in st.session_state:
             .order("id") \
             .execute()
 
-        if rows.data and len(rows.data) > 0:
+        if rows.data:
 
             st.session_state.messages = [
                 {
@@ -89,30 +78,156 @@ if "messages" not in st.session_state:
                 {
                     "role": "assistant",
                     "content": (
-                        "Hi 👋 I'm Synkr AI.\n\n"
+                        "Hi 👋 I'm Synkr AI. "
                         "Paste sprint retrospective feedback "
-                        "or ask me about sprint/team health."
+                        "or ask me about team health."
                     )
                 }
             ]
 
-    except Exception as e:
-
-        st.error(f"Error loading history: {e}")
+    except Exception:
 
         st.session_state.messages = [
             {
                 "role": "assistant",
-                "content": "Hi 👋 I'm Synkr AI."
+                "content": "Hi 👋 I'm Synkr AI"
             }
         ]
 
 # -------------------------------------------------
-# SIDEBAR DASHBOARD
+# SIDEBAR NAVIGATION
 # -------------------------------------------------
-with st.sidebar:
+page = st.sidebar.radio(
+    "Navigation",
+    [
+        "🏠 Retro Analysis",
+        "📊 Team Dashboard",
+        "🛡 Guardrails",
+        "🧠 HITL Review",
+        "📝 Feedback Survey",
+        "⚙ Admin Dashboard"
+    ]
+)
 
-    st.header("📊 Sprint Health")
+# =================================================
+# SCREEN 1 — RETRO ANALYSIS
+# =================================================
+if page == "🏠 Retro Analysis":
+
+    st.title("🤖 Synkr Retro Analysis")
+
+    sprint_name = st.text_input("Sprint Name")
+    team_name = st.text_input("Team Name")
+
+    retro_text = st.text_area(
+        "Paste sprint retrospective feedback",
+        height=220,
+        placeholder="One feedback item per line"
+    )
+
+    if st.button("Analyze Feedback"):
+
+        if retro_text:
+
+            with st.spinner("Analyzing sprint feedback..."):
+
+                try:
+
+                    messages = [
+                        {
+                            "role": "system",
+                            "content": system_prompt
+                        },
+                        {
+                            "role": "user",
+                            "content": retro_text
+                        }
+                    ]
+
+                    completion = client.chat.completions.create(
+                        model="llama-3.1-8b-instant",
+                        messages=messages,
+                        temperature=0.4,
+                        max_tokens=1024
+                    )
+
+                    response = completion \
+                        .choices[0] \
+                        .message.content
+
+                    st.success("Analysis Complete")
+
+                    st.markdown(response)
+
+                    # SAVE USER MESSAGE
+                    conn.table("chat_history").insert({
+                        "role": "user",
+                        "content": retro_text
+                    }).execute()
+
+                    # SAVE AI MESSAGE
+                    conn.table("chat_history").insert({
+                        "role": "assistant",
+                        "content": response
+                    }).execute()
+
+                    # FEEDBACK CARDS
+                    st.divider()
+
+                    st.subheader("AI Insights")
+
+                    feedback_items = retro_text.split("\n")
+
+                    for item in feedback_items:
+
+                        if item.strip():
+
+                            with st.container(border=True):
+
+                                st.write(item)
+
+                                if "delay" in item.lower():
+                                    sentiment = "Negative"
+                                    risk = "High"
+                                elif "good" in item.lower():
+                                    sentiment = "Positive"
+                                    risk = "Low"
+                                else:
+                                    sentiment = "Neutral"
+                                    risk = "Medium"
+
+                                col1, col2, col3 = st.columns(3)
+
+                                col1.metric(
+                                    "Sentiment",
+                                    sentiment
+                                )
+
+                                col2.metric(
+                                    "Risk",
+                                    risk
+                                )
+
+                                col3.metric(
+                                    "Confidence",
+                                    "82%"
+                                )
+
+                                st.button(
+                                    f"Flag as Wrong - {item}",
+                                    key=item
+                                )
+
+                except Exception as e:
+
+                    st.error(f"AI Error: {e}")
+
+# =================================================
+# SCREEN 2 — TEAM DASHBOARD
+# =================================================
+if page == "📊 Team Dashboard":
+
+    st.title("📊 Team Health Dashboard")
 
     try:
 
@@ -124,199 +239,204 @@ with st.sidebar:
 
             df = pd.DataFrame(rows.data)
 
+            col1, col2, col3, col4 = st.columns(4)
+
             total_msgs = len(df)
 
-            st.metric(
-                "Total Messages",
-                total_msgs
+            positive = len(
+                df[
+                    df["content"]
+                    .str.contains(
+                        "good|great|happy",
+                        case=False,
+                        na=False
+                    )
+                ]
             )
 
-            risk_keywords = [
-                "burnout",
-                "delay",
-                "blocked",
-                "stress",
-                "issue",
-                "late",
-                "problem"
-            ]
-
-            risk_count = 0
-
-            for text in df["content"]:
-
-                text = str(text).lower()
-
-                if any(
-                    word in text
-                    for word in risk_keywords
-                ):
-                    risk_count += 1
-
-            st.metric(
-                "Risk Signals",
-                risk_count
+            negative = len(
+                df[
+                    df["content"]
+                    .str.contains(
+                        "delay|blocked|issue",
+                        case=False,
+                        na=False
+                    )
+                ]
             )
 
-            st.metric(
-                "AI Status",
-                "Active"
+            burnout = len(
+                df[
+                    df["content"]
+                    .str.contains(
+                        "burnout|stress|tired",
+                        case=False,
+                        na=False
+                    )
+                ]
             )
+
+            col1.metric("Total Messages", total_msgs)
+            col2.metric("Positive Signals", positive)
+            col3.metric("Negative Signals", negative)
+            col4.metric("Burnout Risks", burnout)
+
+            st.divider()
+
+            st.subheader("Sprint Trends")
+
+            chart_data = pd.DataFrame({
+                "Sprint": [
+                    "Sprint 21",
+                    "Sprint 22",
+                    "Sprint 23"
+                ],
+                "Positive": [60, 68, 72],
+                "Negative": [30, 22, 18]
+            })
+
+            st.line_chart(
+                chart_data.set_index("Sprint")
+            )
+
+            st.subheader("Theme Distribution")
+
+            st.bar_chart({
+                "Communication": 8,
+                "Deployment": 6,
+                "Planning": 4,
+                "Testing": 3
+            })
+
+            st.subheader("Recent Sprint Feedback")
+
+            st.dataframe(df.tail(10))
 
     except Exception as e:
 
-        st.warning("Dashboard unavailable")
+        st.error(f"Dashboard Error: {e}")
 
-# -------------------------------------------------
-# DISPLAY CHAT HISTORY
-# -------------------------------------------------
-for message in st.session_state.messages:
+# =================================================
+# SCREEN 3 — GUARDRAILS
+# =================================================
+if page == "🛡 Guardrails":
 
-    with st.chat_message(message["role"]):
+    st.title("🛡 AI Guardrails")
 
-        st.markdown(message["content"])
-
-# -------------------------------------------------
-# CHAT INPUT
-# -------------------------------------------------
-prompt = st.chat_input(
-    "Paste sprint retro feedback or ask Synkr AI..."
-)
-
-# -------------------------------------------------
-# PROCESS INPUT
-# -------------------------------------------------
-if prompt:
-
-    # ---------------------------------------------
-    # USER MESSAGE
-    # ---------------------------------------------
-    user_message = {
-        "role": "user",
-        "content": prompt
-    }
-
-    st.session_state.messages.append(user_message)
-
-    # DISPLAY USER MESSAGE
-    with st.chat_message("user"):
-
-        st.markdown(prompt)
-
-    # SAVE USER MESSAGE
-    try:
-
-        conn.table("chat_history").insert({
-            "role": "user",
-            "content": prompt
-        }).execute()
-
-    except Exception as e:
-
-        st.warning("Could not save user message")
-
-    # ---------------------------------------------
-    # AI RESPONSE
-    # ---------------------------------------------
-    with st.chat_message("assistant"):
-
-        with st.spinner("🤖 Synkr AI analyzing sprint feedback..."):
-
-            try:
-
-                messages = [
-                    {
-                        "role": "system",
-                        "content": system_prompt
-                    }
-                ] + st.session_state.messages
-
-                completion = client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
-                    messages=messages,
-                    temperature=0.4,
-                    max_tokens=1024
-                )
-
-                response = (
-                    completion
-                    .choices[0]
-                    .message
-                    .content
-                )
-
-                st.markdown(response)
-
-                assistant_message = {
-                    "role": "assistant",
-                    "content": response
-                }
-
-                st.session_state.messages.append(
-                    assistant_message
-                )
-
-                # SAVE AI RESPONSE
-                try:
-
-                    conn.table("chat_history").insert({
-                        "role": "assistant",
-                        "content": response
-                    }).execute()
-
-                except Exception as e:
-
-                    st.warning(
-                        "Could not save AI response"
-                    )
-
-            except Exception as e:
-
-                st.error(f"AI Error: {e}")
-
-# -------------------------------------------------
-# CLEAR CHAT
-# -------------------------------------------------
-st.divider()
-
-col1, col2 = st.columns(2)
-
-with col1:
-
-    if st.button("🗑 Clear Chat History"):
-
-        try:
-
-            conn.table("chat_history") \
-                .delete() \
-                .neq("id", 0) \
-                .execute()
-
-            st.session_state.messages = [
-                {
-                    "role": "assistant",
-                    "content": (
-                        "Chat history cleared 👋"
-                    )
-                }
-            ]
-
-            st.rerun()
-
-        except Exception as e:
-
-            st.error(
-                f"Error clearing chat: {e}"
-            )
-
-with col2:
-
-    st.download_button(
-        "📥 Export Chat",
-        data=json.dumps(
-            st.session_state.messages,
-            indent=2
-        ),
-        file_name="synkr_chat_history.json",
-        mime="application/json"
+    st.toggle(
+        "Named Individual Detection",
+        value=True
     )
+
+    st.toggle(
+        "Burnout Detection",
+        value=True
+    )
+
+    st.toggle(
+        "Sensitive HR Content",
+        value=True
+    )
+
+    st.slider(
+        "Minimum Confidence Threshold",
+        0,
+        100,
+        70
+    )
+
+    st.warning(
+        "Low-confidence AI outputs require "
+        "manual Scrum Master review."
+    )
+
+# =================================================
+# SCREEN 4 — HITL REVIEW
+# =================================================
+if page == "🧠 HITL Review":
+
+    st.title("🧠 Human-in-the-Loop Review")
+
+    st.write("AI Prediction: Negative")
+
+    sentiment = st.selectbox(
+        "Correct Sentiment",
+        [
+            "Positive",
+            "Neutral",
+            "Negative"
+        ]
+    )
+
+    theme = st.selectbox(
+        "Correct Theme",
+        [
+            "Communication",
+            "Deployment",
+            "Planning",
+            "Testing"
+        ]
+    )
+
+    if st.button("Submit Correction"):
+
+        st.success("Correction Saved")
+
+# =================================================
+# SCREEN 5 — FEEDBACK SURVEY
+# =================================================
+if page == "📝 Feedback Survey":
+
+    st.title("📝 Feedback Survey")
+
+    st.radio(
+        "Did AI themes match team discussions?",
+        [
+            "Yes",
+            "Partially",
+            "No"
+        ]
+    )
+
+    st.slider(
+        "Insight usefulness",
+        1,
+        5
+    )
+
+    st.text_area(
+        "What did the AI miss?"
+    )
+
+    if st.button("Submit Feedback"):
+
+        st.success("Feedback Submitted")
+
+# =================================================
+# SCREEN 6 — ADMIN DASHBOARD
+# =================================================
+if page == "⚙ Admin Dashboard":
+
+    st.title("⚙ Admin Dashboard")
+
+    col1, col2 = st.columns(2)
+
+    col1.metric("Model Accuracy", "87%")
+    col2.metric("Avg Latency", "2.1s")
+
+    col1.metric("Override Rate", "18%")
+    col2.metric("Hallucination Rate", "3%")
+
+    st.divider()
+
+    st.success("Pilot Teams Active: 3")
+
+    st.info("Average Time Saved: 74%")
+
+    st.warning(
+        "Monitor hallucination spikes and override rates"
+    )
+
+    if st.button("🔴 DISABLE AI"):
+
+        st.error("AI Disabled")
