@@ -1,5 +1,5 @@
 # =========================================================
-# Synkr AI Dashboard - Clean Enterprise MVP
+# Synkr AI Dashboard - Enterprise AI Governance Prototype
 # =========================================================
 
 import streamlit as st
@@ -39,17 +39,55 @@ client = Groq(
 if "guardrails" not in st.session_state:
 
     st.session_state.guardrails = {
-        "sensitive_hr": True,
-        "hallucination": True,
-        "data_insufficiency": True,
-        "sync_failure": True,
-        "api_failure": True,
         "confidence_threshold": 70
     }
 
 if "ai_enabled" not in st.session_state:
 
     st.session_state.ai_enabled = True
+
+# =================================================
+# GUARDRAIL LOGGER
+# =================================================
+def log_guardrail_event(
+    sprint_name,
+    team_name,
+    feedback,
+    guardrail_type,
+    severity="Medium"
+):
+
+    try:
+
+        conn.table(
+            "guardrail_events"
+        ).insert({
+
+            "sprint_name":
+            sprint_name,
+
+            "team_name":
+            team_name,
+
+            "feedback":
+            feedback,
+
+            "guardrail_type":
+            guardrail_type,
+
+            "severity":
+            severity,
+
+            "reviewer_required":
+            True
+
+        }).execute()
+
+    except Exception as e:
+
+        st.error(
+            f"Guardrail logging failed: {e}"
+        )
 
 # =================================================
 # SIDEBAR
@@ -73,9 +111,13 @@ if page == "🏠 Retro Analysis":
 
     st.title("🤖 Synkr Retro Analysis")
 
-    sprint_name = st.text_input("Sprint Name")
+    sprint_name = st.text_input(
+        "Sprint Name"
+    )
 
-    team_name = st.text_input("Team Name")
+    team_name = st.text_input(
+        "Team Name"
+    )
 
     retro_text = st.text_area(
         "Paste sprint retrospective feedback",
@@ -166,14 +208,31 @@ Feedback:
                         "✅ AI Analysis Complete"
                     )
 
-                    conn.table("chat_history").insert({
-                        "role": "user",
-                        "content": retro_text
+                    # =====================================
+                    # CHAT HISTORY
+                    # =====================================
+                    conn.table(
+                        "chat_history"
+                    ).insert({
+
+                        "role":
+                        "user",
+
+                        "content":
+                        retro_text
+
                     }).execute()
 
-                    conn.table("chat_history").insert({
-                        "role": "assistant",
-                        "content": response_text
+                    conn.table(
+                        "chat_history"
+                    ).insert({
+
+                        "role":
+                        "assistant",
+
+                        "content":
+                        response_text
+
                     }).execute()
 
                     for item in items:
@@ -185,6 +244,9 @@ Feedback:
                         confidence = item["confidence"]
                         insight = item["insight"]
 
+                        # =====================================
+                        # SAVE RETRO ANALYSIS
+                        # =====================================
                         conn.table(
                             "retro_analysis"
                         ).insert({
@@ -212,6 +274,11 @@ Feedback:
 
                         }).execute()
 
+                        # =====================================
+                        # AI METRICS
+                        # =====================================
+                        hallucination_flag = False
+
                         conn.table(
                             "ai_metrics"
                         ).insert({
@@ -226,12 +293,76 @@ Feedback:
                             confidence,
 
                             "hallucination_flag":
-                            False,
+                            hallucination_flag,
 
                             "override_flag":
                             False
 
                         }).execute()
+
+                        # =====================================
+                        # GUARDRAILS
+                        # =====================================
+                        feedback_lower = (
+                            retro_text.lower()
+                        )
+
+                        hallucination_terms = [
+                            "always",
+                            "guaranteed",
+                            "100%",
+                            "perfect",
+                            "zero issues"
+                        ]
+
+                        # Sensitive HR
+                        if any(
+                            word in feedback_lower
+                            for word in [
+                                "salary",
+                                "harassment",
+                                "abuse",
+                                "lawsuit",
+                                "fired"
+                            ]
+                        ):
+
+                            log_guardrail_event(
+                                sprint_name,
+                                team_name,
+                                retro_text,
+                                "Sensitive HR Content",
+                                "High"
+                            )
+
+                        # Hallucination
+                        if any(
+                            word in feedback_lower
+                            for word in hallucination_terms
+                        ):
+
+                            hallucination_flag = True
+
+                            log_guardrail_event(
+                                sprint_name,
+                                team_name,
+                                retro_text,
+                                "Hallucination Warning",
+                                "High"
+                            )
+
+                        # Data Insufficiency
+                        if len(
+                            retro_text.split()
+                        ) < 4:
+
+                            log_guardrail_event(
+                                sprint_name,
+                                team_name,
+                                retro_text,
+                                "Data Insufficiency",
+                                "Medium"
+                            )
 
                         threshold = (
                             st.session_state
@@ -240,6 +371,9 @@ Feedback:
                             ]
                         )
 
+                        # =====================================
+                        # DISPLAY CARDS
+                        # =====================================
                         with st.container(border=True):
 
                             if confidence >= 85:
@@ -293,6 +427,31 @@ Feedback:
                             )
 
                 except Exception as e:
+
+                    error_message = str(e)
+
+                    if "Connection" in error_message:
+
+                        log_guardrail_event(
+                            sprint_name,
+                            team_name,
+                            retro_text,
+                            "Sync Failure",
+                            "High"
+                        )
+
+                    elif (
+                        "API" in error_message
+                        or "429" in error_message
+                    ):
+
+                        log_guardrail_event(
+                            sprint_name,
+                            team_name,
+                            retro_text,
+                            "API Failure",
+                            "High"
+                        )
 
                     st.error(
                         f"AI Analysis Error: {e}"
@@ -718,10 +877,28 @@ if page == "⚙ Admin Dashboard":
             2
         )
 
-        hallucination_rate = 3.0
-        acceptance_rate = 94
+        hallucination_rate = round(
+            (
+                df["hallucination_flag"].sum()
+                / total
+            ) * 100,
+            1
+        )
+
+        override_rate = round(
+            (
+                df["override_flag"].sum()
+                / total
+            ) * 100,
+            1
+        )
+
+        acceptance_rate = round(
+            100 - override_rate,
+            1
+        )
+
         repeat_usage = 87
-        override_rate = 6
 
         active_teams = (
             df["team_name"].nunique()
