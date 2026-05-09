@@ -1,3 +1,7 @@
+# =========================================================
+# Synkr AI Dashboard - Enterprise AI Governance Prototype
+# =========================================================
+
 import streamlit as st
 from groq import Groq
 from st_supabase_connection import SupabaseConnection
@@ -40,14 +44,6 @@ sensitive_keywords = [
     "fired"
 ]
 
-burnout_keywords = [
-    "burnout",
-    "stress",
-    "exhausted",
-    "tired",
-    "overworked"
-]
-
 # =================================================
 # SESSION STATE
 # =================================================
@@ -61,6 +57,31 @@ if "guardrails" not in st.session_state:
 if "ai_enabled" not in st.session_state:
 
     st.session_state.ai_enabled = True
+
+# =================================================
+# HELPER FUNCTIONS
+# =================================================
+def detect_hallucination(feedback, insight):
+
+    hallucination_terms = [
+        "always",
+        "guaranteed",
+        "100%",
+        "never fails"
+    ]
+
+    combined = (
+        feedback + " " + insight
+    ).lower()
+
+    return any(
+        term in combined
+        for term in hallucination_terms
+    )
+
+def detect_data_insufficiency(feedback):
+
+    return len(feedback.split()) < 4
 
 # =================================================
 # SIDEBAR
@@ -243,6 +264,13 @@ Feedback:
 
                         }).execute()
 
+                        hallucination_flag = (
+                            detect_hallucination(
+                                feedback,
+                                insight
+                            )
+                        )
+
                         conn.table(
                             "ai_metrics"
                         ).insert({
@@ -257,7 +285,7 @@ Feedback:
                             confidence,
 
                             "hallucination_flag":
-                            False,
+                            hallucination_flag,
 
                             "override_flag":
                             False
@@ -269,56 +297,8 @@ Feedback:
                         )
 
                         # =====================================
-                        # HALLUCINATION WARNING
+                        # SENSITIVE HR
                         # =====================================
-                        if detect_hallucination(
-                            feedback,
-                            insight
-                        ):
-
-                            conn.table(
-                                "guardrail_events"
-                            ).insert({
-
-                                "sprint_name": sprint_name,
-                                "team_name": team_name,
-                                "feedback": feedback,
-                                "guardrail_type": "Hallucination Warning",
-                                "severity": "High",
-                                "reviewer_required": True
-
-                            }).execute()
-
-                            st.warning(
-                                "⚠ Potential hallucination detected"
-                            )
-
-                        # =====================================
-                        # DATA INSUFFICIENCY
-                        # =====================================
-                        if detect_data_insufficiency(
-                            feedback
-                        ):
-
-                            conn.table(
-                                "guardrail_events"
-                            ).insert({
-
-                                "sprint_name": sprint_name,
-                                "team_name": team_name,
-                                "feedback": feedback,
-                                "guardrail_type": "Data Insufficiency",
-                                "severity": "Medium",
-                                "reviewer_required": True
-
-                            }).execute()
-
-                            st.warning(
-                                "⚠ Insufficient feedback context"
-                            )
-
-                        
-
                         if (
                             st.session_state
                             .guardrails[
@@ -359,7 +339,73 @@ Feedback:
                                     "🚨 Sensitive HR content detected"
                                 )
 
-                        
+                        # =====================================
+                        # HALLUCINATION WARNING
+                        # =====================================
+                        if hallucination_flag:
+
+                            conn.table(
+                                "guardrail_events"
+                            ).insert({
+
+                                "sprint_name":
+                                sprint_name,
+
+                                "team_name":
+                                team_name,
+
+                                "feedback":
+                                feedback,
+
+                                "guardrail_type":
+                                "Hallucination Warning",
+
+                                "severity":
+                                "High",
+
+                                "reviewer_required":
+                                True
+
+                            }).execute()
+
+                            st.warning(
+                                "⚠ Potential hallucination detected"
+                            )
+
+                        # =====================================
+                        # DATA INSUFFICIENCY
+                        # =====================================
+                        if detect_data_insufficiency(
+                            feedback
+                        ):
+
+                            conn.table(
+                                "guardrail_events"
+                            ).insert({
+
+                                "sprint_name":
+                                sprint_name,
+
+                                "team_name":
+                                team_name,
+
+                                "feedback":
+                                feedback,
+
+                                "guardrail_type":
+                                "Data Insufficiency",
+
+                                "severity":
+                                "Medium",
+
+                                "reviewer_required":
+                                True
+
+                            }).execute()
+
+                            st.warning(
+                                "⚠ Insufficient feedback context"
+                            )
 
                         threshold = (
                             st.session_state
@@ -426,37 +472,14 @@ Feedback:
 
                     if "Connection" in error_message:
 
-                        conn.table(
-                            "guardrail_events"
-                        ).insert({
-
-                            "sprint_name": sprint_name,
-                            "team_name": team_name,
-                            "feedback": retro_text,
-                            "guardrail_type": "Sync Failure",
-                            "severity": "High",
-                            "reviewer_required": True
-
-                        }).execute()
-
                         st.error(
                             "🔄 Sync failure detected"
                         )
 
-                    elif "API" in error_message or "429" in error_message:
-
-                        conn.table(
-                            "guardrail_events"
-                        ).insert({
-
-                            "sprint_name": sprint_name,
-                            "team_name": team_name,
-                            "feedback": retro_text,
-                            "guardrail_type": "API Failure",
-                            "severity": "High",
-                            "reviewer_required": True
-
-                        }).execute()
+                    elif (
+                        "API" in error_message
+                        or "429" in error_message
+                    ):
 
                         st.error(
                             "🚨 AI API failure detected"
@@ -473,164 +496,126 @@ if page == "📊 Team Dashboard":
 
     st.title("📊 Team Health Dashboard")
 
-    try:
+    rows = conn.table(
+        "retro_analysis"
+    ).select("*").execute()
 
-        rows = conn.table(
-            "retro_analysis"
-        ).select("*").execute()
+    if rows.data:
 
-        if rows.data:
+        df = pd.DataFrame(rows.data)
 
-            df = pd.DataFrame(rows.data)
+        col1, col2, col3, col4 = st.columns(4)
 
-            col1, col2, col3, col4 = st.columns(4)
+        col1.metric(
+            "Total Feedback",
+            len(df)
+        )
 
-            col1.metric(
-                "Total Feedback",
-                len(df)
+        col2.metric(
+            "Positive Signals",
+            len(
+                df[
+                    df["sentiment"]
+                    == "Positive"
+                ]
             )
+        )
 
-            col2.metric(
-                "Positive Signals",
-                len(
-                    df[
-                        df["sentiment"]
-                        == "Positive"
-                    ]
-                )
+        col3.metric(
+            "Negative Signals",
+            len(
+                df[
+                    df["sentiment"]
+                    == "Negative"
+                ]
             )
+        )
 
-            col3.metric(
-                "Negative Signals",
-                len(
-                    df[
-                        df["sentiment"]
-                        == "Negative"
-                    ]
-                )
+        col4.metric(
+            "Neutral Signals",
+            len(
+                df[
+                    df["sentiment"]
+                    == "Neutral"
+                ]
             )
+        )
 
-            col4.metric(
-                "Burnout Risks",
-                len(
-                    df[
-                        df["theme"]
-                        == "Team Health"
-                    ]
-                )
+        st.divider()
+
+        st.subheader(
+            "📈 Sprint Sentiment Trends"
+        )
+
+        trend_df = (
+            df.groupby(
+                ["sprint_name", "sentiment"]
             )
+            .size()
+            .unstack(fill_value=0)
+        )
 
-            st.divider()
+        for col in [
+            "Positive",
+            "Neutral",
+            "Negative"
+        ]:
 
-            st.subheader(
-                "📈 Sprint Sentiment Trends"
-            )
+            if col not in trend_df.columns:
+                trend_df[col] = 0
 
-            trend_df = (
-                df.groupby(
-                    ["sprint_name", "sentiment"]
-                )
-                .size()
-                .unstack(fill_value=0)
-            )
+        trend_df = trend_df[
+            ["Positive", "Neutral", "Negative"]
+        ]
 
-            for col in [
+        trend_reset = (
+            trend_df.reset_index()
+        )
+
+        fig = px.line(
+            trend_reset,
+            x="sprint_name",
+            y=[
                 "Positive",
                 "Neutral",
                 "Negative"
-            ]:
-
-                if col not in trend_df.columns:
-                    trend_df[col] = 0
-
-            trend_df = trend_df[
-                ["Positive", "Neutral", "Negative"]
-            ]
-
-            trend_reset = (
-                trend_df.reset_index()
-            )
-
-            fig = px.line(
-                trend_reset,
-                x="sprint_name",
-                y=[
-                    "Positive",
-                    "Neutral",
-                    "Negative"
-                ],
-                markers=True,
-                color_discrete_map={
-                    "Positive": "green",
-                    "Neutral": "orange",
-                    "Negative": "red"
-                }
-            )
-
-            fig.update_layout(
-                xaxis_title="Sprint",
-                yaxis_title="Feedback Count",
-                legend_title="Sentiment",
-                height=500
-            )
-
-            st.plotly_chart(
-                fig,
-                width="stretch"
-            )
-
-            st.subheader(
-                "📊 Theme Distribution"
-            )
-
-            theme_counts = (
-                df["theme"]
-                .value_counts()
-            )
-
-            st.bar_chart(theme_counts)
-
-            st.subheader(
-                "📝 Recent Sprint Feedback"
-            )
-
-            st.dataframe(
-                df.tail(10),
-                width="stretch"
-            )
-
-    except Exception as e:
-
-        st.error(
-            f"Dashboard Error: {e}"
+            ],
+            markers=True,
+            color_discrete_map={
+                "Positive": "green",
+                "Neutral": "orange",
+                "Negative": "red"
+            }
         )
 
-# =================================================
-# GUARDRAIL WARNING HELPERS
-# =================================================
+        fig.update_layout(
+            height=500
+        )
 
-def detect_hallucination(feedback, insight):
+        st.plotly_chart(
+            fig,
+            width="stretch"
+        )
 
-    hallucination_terms = [
-        "always",
-        "guaranteed",
-        "100%",
-        "never fails"
-    ]
+        st.subheader(
+            "📊 Theme Distribution"
+        )
 
-    combined = (
-        feedback + " " + insight
-    ).lower()
+        theme_counts = (
+            df["theme"]
+            .value_counts()
+        )
 
-    return any(
-        term in combined
-        for term in hallucination_terms
-    )
+        st.bar_chart(theme_counts)
 
+        st.subheader(
+            "📝 Recent Sprint Feedback"
+        )
 
-def detect_data_insufficiency(feedback):
-
-    return len(feedback.split()) < 4
+        st.dataframe(
+            df.tail(10),
+            width="stretch"
+        )
 
 # =================================================
 # GUARDRAILS
@@ -657,10 +642,13 @@ if page == "🛡 Guardrails":
 
     st.session_state.guardrails = {
         "sensitive_hr": sensitive_hr,
-        "confidence_threshold": confidence_threshold
+        "confidence_threshold":
+        confidence_threshold
     }
 
-    st.success("✅ Guardrails Updated")
+    st.success(
+        "✅ Guardrails Updated"
+    )
 
     st.divider()
 
@@ -725,124 +713,9 @@ if page == "🧠 HITL Review":
 
             with st.container(border=True):
 
-                st.write(row["feedback"])
-
-                col1, col2, col3 = st.columns(3)
-
-                col1.metric(
-                    "Sentiment",
-                    row["sentiment"]
+                st.write(
+                    row["feedback"]
                 )
-
-                col2.metric(
-                    "Theme",
-                    row["theme"]
-                )
-
-                col3.metric(
-                    "Confidence",
-                    f"{row['confidence']}%"
-                )
-
-                corrected_sentiment = st.selectbox(
-                    "Correct Sentiment",
-                    [
-                        "Positive",
-                        "Neutral",
-                        "Negative"
-                    ],
-                    key=f"sent_{index}"
-                )
-
-                corrected_theme = st.selectbox(
-        "Sensitive HR Content",
-        value=st.session_state.guardrails[
-            "sensitive_hr"
-        ]
-    )
-
-    confidence_threshold = st.slider(
-        "Minimum Confidence Threshold",
-        0,
-        100,
-        st.session_state.guardrails[
-            "confidence_threshold"
-        ]
-    )
-
-    st.session_state.guardrails = {
-        "named_detection": named_detection,
-        "burnout_detection": burnout_detection,
-        "sensitive_hr": sensitive_hr,
-        "confidence_threshold": confidence_threshold
-    }
-
-    st.success("✅ Guardrails Updated")
-
-    st.divider()
-
-    guardrail_rows = conn.table(
-        "guardrail_events"
-    ).select("*").execute()
-
-    if guardrail_rows.data:
-
-        guardrail_df = pd.DataFrame(
-            guardrail_rows.data
-        )
-
-        st.metric(
-            "Total Guardrail Events",
-            len(guardrail_df)
-        )
-
-        st.subheader(
-            "📊 Guardrail Distribution"
-        )
-
-        guardrail_counts = (
-            guardrail_df[
-                "guardrail_type"
-            ].value_counts()
-        )
-
-        st.bar_chart(
-            guardrail_counts
-        )
-
-        st.subheader(
-            "📝 Recent Guardrail Events"
-        )
-
-        st.dataframe(
-            guardrail_df.tail(10),
-            width="stretch"
-        )
-
-# =================================================
-# HITL REVIEW
-# =================================================
-if page == "🧠 HITL Review":
-
-    st.title(
-        "🧠 Human-in-the-Loop Review"
-    )
-
-    rows = conn.table(
-        "retro_analysis"
-    ).select("*").execute()
-
-    if rows.data:
-
-        df = pd.DataFrame(rows.data)
-
-        latest = df.tail(5)
-
-        for index, row in latest.iterrows():
-
-            with st.container(border=True):
-
-                st.write(row["feedback"])
 
                 col1, col2, col3 = st.columns(3)
 
@@ -893,13 +766,26 @@ if page == "🧠 HITL Review":
                         "hitl_reviews"
                     ).insert({
 
-                        "feedback": row["feedback"],
-                        "ai_sentiment": row["sentiment"],
-                        "corrected_sentiment": corrected_sentiment,
-                        "ai_theme": row["theme"],
-                        "corrected_theme": corrected_theme,
-                        "reviewer": "Reviewer",
-                        "status": "Reviewed"
+                        "feedback":
+                        row["feedback"],
+
+                        "ai_sentiment":
+                        row["sentiment"],
+
+                        "corrected_sentiment":
+                        corrected_sentiment,
+
+                        "ai_theme":
+                        row["theme"],
+
+                        "corrected_theme":
+                        corrected_theme,
+
+                        "reviewer":
+                        "Reviewer",
+
+                        "status":
+                        "Reviewed"
 
                     }).execute()
 
@@ -942,9 +828,14 @@ if page == "📝 Feedback Survey":
             "feedback_survey"
         ).insert({
 
-            "theme_match": theme_match,
-            "usefulness": usefulness,
-            "missed_feedback": missed_feedback
+            "theme_match":
+            theme_match,
+
+            "usefulness":
+            usefulness,
+
+            "missed_feedback":
+            missed_feedback
 
         }).execute()
 
@@ -1065,10 +956,6 @@ if page == "⚙ Admin Dashboard":
 
         st.divider()
 
-        st.success(
-            "Real-time governance monitoring enabled."
-        )
-
         st.subheader(
             "📈 AI Confidence Trend"
         )
@@ -1121,7 +1008,8 @@ if page == "⚙ Admin Dashboard":
             st.session_state.ai_enabled = False
 
             st.error(
-                "AI paused. All users reverted to manual mode."
+                "AI paused. "
+                "All users reverted to manual mode."
             )
 
     else:
@@ -1141,4 +1029,3 @@ if page == "⚙ Admin Dashboard":
             st.success(
                 "AI System Reactivated"
             )
-
