@@ -1136,15 +1136,8 @@ if page == "⚙ Admin Dashboard":
 
             st.session_state.ai_enabled = True
 
-            st.success(
-                "AI System Reactivated"
-            )
 
-    st.title("⚙ Admin Dashboard")
-
-    rows = conn.table(
-        "ai_metrics"
-    ).select("*").execute()
+  
 
     if rows.data:
 
