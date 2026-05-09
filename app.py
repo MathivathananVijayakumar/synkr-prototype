@@ -3,7 +3,6 @@ from groq import Groq
 from st_supabase_connection import SupabaseConnection
 import pandas as pd
 import time
-from datetime import datetime
 
 # =================================================
 # PAGE CONFIG
@@ -88,9 +87,9 @@ if page == "🏠 Retro Analysis":
         placeholder="One feedback item per line"
     )
 
-    # ---------------------------------------------
+    # -------------------------------------------------
     # GUARDRAILS
-    # ---------------------------------------------
+    # -------------------------------------------------
     sensitive_keywords = [
         "harassment",
         "fired",
@@ -121,9 +120,9 @@ if page == "🏠 Retro Analysis":
             "for reliable AI analysis."
         )
 
-    # ---------------------------------------------
-    # ANALYZE BUTTON
-    # ---------------------------------------------
+    # -------------------------------------------------
+    # ANALYZE
+    # -------------------------------------------------
     if st.button("Analyze Feedback"):
 
         if retro_text:
@@ -169,9 +168,9 @@ if page == "🏠 Retro Analysis":
                         2
                     )
 
-                    # ---------------------------------
+                    # -----------------------------------------
                     # SAVE CHAT HISTORY
-                    # ---------------------------------
+                    # -----------------------------------------
                     conn.table("chat_history").insert({
                         "role": "user",
                         "content": retro_text
@@ -182,24 +181,35 @@ if page == "🏠 Retro Analysis":
                         "content": response
                     }).execute()
 
-                    # ---------------------------------
-                    # AI RESPONSE
-                    # ---------------------------------
+                    # -----------------------------------------
+                    # SAVE SESSION METRICS
+                    # -----------------------------------------
+                    conn.table("ai_metrics").insert({
+                        "team_name": team_name,
+                        "latency": latency,
+                        "confidence": 82,
+                        "hallucination_flag": False,
+                        "override_flag": False
+                    }).execute()
+
+                    # -----------------------------------------
+                    # SHOW AI RESPONSE
+                    # -----------------------------------------
                     st.success(
                         "✅ Analysis Complete"
                     )
 
                     st.markdown(response)
 
-                    # ---------------------------------
-                    # FEEDBACK CARDS
-                    # ---------------------------------
                     st.divider()
 
                     st.subheader(
                         "📋 Feedback Analysis"
                     )
 
+                    # -----------------------------------------
+                    # FEEDBACK CARDS
+                    # -----------------------------------------
                     for item in lines:
 
                         if item.strip():
@@ -211,16 +221,16 @@ if page == "🏠 Retro Analysis":
                             confidence = 75
                             theme = "General"
 
-                            # -------------------------
-                            # SIMPLE RULE ENGINE
-                            # -------------------------
+                            # -----------------------------
+                            # RULE ENGINE
+                            # -----------------------------
                             if any(
                                 word in item_lower
                                 for word in [
                                     "good",
                                     "great",
-                                    "smooth",
-                                    "happy"
+                                    "happy",
+                                    "smooth"
                                 ]
                             ):
                                 sentiment = "Positive"
@@ -243,9 +253,9 @@ if page == "🏠 Retro Analysis":
                                 confidence = 82
                                 theme = "Team Health"
 
-                            # -------------------------
+                            # -----------------------------
                             # CONFIDENCE UI
-                            # -------------------------
+                            # -----------------------------
                             if confidence >= 85:
                                 st.success(
                                     "🟢 High Confidence"
@@ -291,29 +301,6 @@ if page == "🏠 Retro Analysis":
                                     f"{confidence}%"
                                 )
 
-                                hallucination = st.checkbox(
-                                    "Flag as Hallucination",
-                                    key=f"hall_{item}"
-                                )
-
-                                override = st.checkbox(
-                                    "Manual Override",
-                                    key=f"override_{item}"
-                                )
-
-                                # ---------------------
-                                # SAVE METRICS
-                                # ---------------------
-                                conn.table(
-                                    "ai_metrics"
-                                ).insert({
-                                    "team_name": team_name,
-                                    "latency": latency,
-                                    "confidence": confidence,
-                                    "hallucination_flag": hallucination,
-                                    "override_flag": override
-                                }).execute()
-
                 except Exception as e:
 
                     st.error(f"AI Error: {e}")
@@ -331,7 +318,7 @@ if page == "📊 Team Dashboard":
             "chat_history"
         ).select("*").execute()
 
-        if rows.data:
+        if rows.data and len(rows.data) > 0:
 
             df = pd.DataFrame(rows.data)
 
@@ -406,9 +393,7 @@ if page == "📊 Team Dashboard":
             })
 
             st.line_chart(
-                chart_data.set_index(
-                    "Sprint"
-                )
+                chart_data.set_index("Sprint")
             )
 
             st.subheader(
@@ -429,6 +414,12 @@ if page == "📊 Team Dashboard":
             st.dataframe(
                 df.tail(10),
                 use_container_width=True
+            )
+
+        else:
+
+            st.info(
+                "No dashboard data available yet."
             )
 
     except Exception as e:
@@ -476,38 +467,157 @@ if page == "🛡 Guardrails":
 # =================================================
 if page == "🧠 HITL Review":
 
-    st.title(
-        "🧠 Human-in-the-Loop Review"
-    )
+    st.title("🧠 Human-in-the-Loop Review")
 
-    st.write(
-        "AI Prediction: Negative"
-    )
+    try:
 
-    sentiment = st.selectbox(
-        "Correct Sentiment",
-        [
-            "Positive",
-            "Neutral",
-            "Negative"
-        ]
-    )
+        rows = conn.table(
+            "chat_history"
+        ).select("*").execute()
 
-    theme = st.selectbox(
-        "Correct Theme",
-        [
-            "Communication",
-            "Deployment",
-            "Planning",
-            "Testing"
-        ]
-    )
+        if rows.data and len(rows.data) > 0:
 
-    if st.button(
-        "Submit Correction"
-    ):
-        st.success(
-            "Correction Saved"
+            df = pd.DataFrame(rows.data)
+
+            user_messages = df[
+                df["role"] == "user"
+            ]
+
+            if len(user_messages) > 0:
+
+                latest_feedback = (
+                    user_messages.iloc[-1]["content"]
+                )
+
+                feedback_items = latest_feedback.split("\n")
+
+                st.subheader(
+                    "Review AI Predictions"
+                )
+
+                for index, item in enumerate(
+                    feedback_items
+                ):
+
+                    if item.strip():
+
+                        item_lower = item.lower()
+
+                        ai_sentiment = "Neutral"
+                        ai_theme = "General"
+
+                        if any(
+                            word in item_lower
+                            for word in [
+                                "good",
+                                "great",
+                                "smooth"
+                            ]
+                        ):
+                            ai_sentiment = "Positive"
+                            ai_theme = "Delivery"
+
+                        elif any(
+                            word in item_lower
+                            for word in [
+                                "delay",
+                                "blocked",
+                                "issue",
+                                "stress"
+                            ]
+                        ):
+                            ai_sentiment = "Negative"
+                            ai_theme = "Team Health"
+
+                        with st.container(
+                            border=True
+                        ):
+
+                            st.write(
+                                f"📝 {item}"
+                            )
+
+                            col1, col2 = st.columns(2)
+
+                            col1.metric(
+                                "AI Sentiment",
+                                ai_sentiment
+                            )
+
+                            col2.metric(
+                                "AI Theme",
+                                ai_theme
+                            )
+
+                            st.divider()
+
+                            corrected_sentiment = (
+                                st.selectbox(
+                                    "Correct Sentiment",
+                                    [
+                                        "Positive",
+                                        "Neutral",
+                                        "Negative"
+                                    ],
+                                    key=f"sent_{index}"
+                                )
+                            )
+
+                            corrected_theme = (
+                                st.selectbox(
+                                    "Correct Theme",
+                                    [
+                                        "Communication",
+                                        "Deployment",
+                                        "Planning",
+                                        "Testing",
+                                        "Team Health",
+                                        "Delivery"
+                                    ],
+                                    key=f"theme_{index}"
+                                )
+                            )
+
+                            if st.button(
+                                "Submit Correction",
+                                key=f"btn_{index}"
+                            ):
+
+                                override_flag = (
+                                    corrected_sentiment
+                                    != ai_sentiment
+                                )
+
+                                conn.table(
+                                    "ai_metrics"
+                                ).insert({
+                                    "team_name": "Pilot Team",
+                                    "latency": 0,
+                                    "confidence": 75,
+                                    "hallucination_flag": False,
+                                    "override_flag": override_flag
+                                }).execute()
+
+                                st.success(
+                                    "✅ Correction Saved"
+                                )
+
+            else:
+
+                st.info(
+                    "No retro feedback available yet."
+                )
+
+        else:
+
+            st.info(
+                "No chat history found."
+            )
+
+    except Exception as e:
+
+        st.error(
+            f"HITL Review Error: {e}"
         )
 
 # =================================================
@@ -556,7 +666,7 @@ if page == "⚙ Admin Dashboard":
             "ai_metrics"
         ).select("*").execute()
 
-        if rows.data:
+        if rows.data and len(rows.data) > 0:
 
             df = pd.DataFrame(rows.data)
 
@@ -574,23 +684,22 @@ if page == "⚙ Admin Dashboard":
 
             hallucination_rate = round(
                 (
-                    df["hallucination_flag"]
-                    .sum() / total
+                    df["hallucination_flag"].sum()
+                    / total
                 ) * 100,
                 1
             )
 
             override_rate = round(
                 (
-                    df["override_flag"]
-                    .sum() / total
+                    df["override_flag"].sum()
+                    / total
                 ) * 100,
                 1
             )
 
             active_teams = (
-                df["team_name"]
-                .nunique()
+                df["team_name"].nunique()
             )
 
             col1, col2 = st.columns(2)
@@ -625,9 +734,6 @@ if page == "⚙ Admin Dashboard":
                 "Average Time Saved: 74%"
             )
 
-            # -------------------------------------
-            # RISK ALERTS
-            # -------------------------------------
             if hallucination_rate > 5:
                 st.error(
                     "⚠ Hallucination rate above threshold"
@@ -643,15 +749,19 @@ if page == "⚙ Admin Dashboard":
                 "and override rates"
             )
 
-            # -------------------------------------
-            # KILL SWITCH
-            # -------------------------------------
             if st.button(
                 "🔴 DISABLE AI"
             ):
                 st.error(
                     "AI Disabled"
                 )
+
+        else:
+
+            st.info(
+                "No AI metrics available yet. "
+                "Run sprint analysis first."
+            )
 
     except Exception as e:
 
