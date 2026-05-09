@@ -1,5 +1,5 @@
 # =========================================================
-# Synkr AI Dashboard - Fully Dynamic AI Version
+# Synkr AI Dashboard - Enterprise AI Governance Prototype
 # =========================================================
 
 import streamlit as st
@@ -64,6 +64,13 @@ if "guardrails" not in st.session_state:
     }
 
 # =================================================
+# AI KILL SWITCH
+# =================================================
+if "ai_enabled" not in st.session_state:
+
+    st.session_state.ai_enabled = True
+
+# =================================================
 # SIDEBAR
 # =================================================
 page = st.sidebar.radio(
@@ -92,13 +99,28 @@ if page == "🏠 Retro Analysis":
     retro_text = st.text_area(
         "Paste sprint retrospective feedback",
         height=220,
-        placeholder="One feedback item per line"
+        placeholder="One item per line"
     )
 
     # =================================================
     # ANALYZE BUTTON
     # =================================================
-    if st.button("Analyze Feedback"):
+    if st.button("Analyze Feedback →"):
+
+        # =============================================
+        # AI DISABLED
+        # =============================================
+        if not st.session_state.ai_enabled:
+
+            st.error(
+                "🚨 AI analysis is disabled."
+            )
+
+            st.warning(
+                "System reverted to manual mode."
+            )
+
+            st.stop()
 
         if retro_text.strip():
 
@@ -189,7 +211,7 @@ Feedback:
                     items = parsed["items"]
 
                     # =========================================
-                    # SAVE CHAT HISTORY
+                    # SAVE CHAT
                     # =========================================
                     conn.table("chat_history").insert({
                         "role": "user",
@@ -212,7 +234,7 @@ Feedback:
                     )
 
                     # =========================================
-                    # PROCESS AI OUTPUT
+                    # PROCESS ITEMS
                     # =========================================
                     for item in items:
 
@@ -289,6 +311,7 @@ Feedback:
                             feedback.lower()
                         )
 
+                        # Burnout
                         if (
                             st.session_state
                             .guardrails[
@@ -325,6 +348,11 @@ Feedback:
 
                                 }).execute()
 
+                                st.warning(
+                                    "🔥 Burnout risk detected"
+                                )
+
+                        # Sensitive HR
                         if (
                             st.session_state
                             .guardrails[
@@ -361,6 +389,11 @@ Feedback:
 
                                 }).execute()
 
+                                st.error(
+                                    "🚨 Sensitive HR content detected"
+                                )
+
+                        # Named Individual
                         if (
                             st.session_state
                             .guardrails[
@@ -394,6 +427,10 @@ Feedback:
 
                                 }).execute()
 
+                                st.warning(
+                                    "👤 Named individual detected"
+                                )
+
                         # =====================================
                         # UI DISPLAY
                         # =====================================
@@ -406,13 +443,13 @@ Feedback:
 
                         with st.container(border=True):
 
-                            if confidence >= threshold:
+                            if confidence >= 85:
 
                                 st.success(
                                     "🟢 High Confidence"
                                 )
 
-                            elif confidence >= 60:
+                            elif confidence >= threshold:
 
                                 st.warning(
                                     "🟠 Suggested — Review Before Use"
@@ -421,7 +458,7 @@ Feedback:
                             else:
 
                                 st.error(
-                                    "🔴 Manual Review Required"
+                                    "🔴 AI Unsure"
                                 )
 
                             st.write(
@@ -518,9 +555,6 @@ if page == "📊 Team Dashboard":
 
             st.divider()
 
-            # =========================================
-            # SENTIMENT TRENDS
-            # =========================================
             st.subheader(
                 "📈 Sprint Sentiment Trends"
             )
@@ -535,9 +569,6 @@ if page == "📊 Team Dashboard":
 
             st.line_chart(trend_df)
 
-            # =========================================
-            # THEME DISTRIBUTION
-            # =========================================
             st.subheader(
                 "📊 Theme Distribution"
             )
@@ -930,3 +961,44 @@ if page == "⚙ Admin Dashboard":
         st.error(
             f"Admin Dashboard Error: {e}"
         )
+
+    # =================================================
+    # AI KILL SWITCH
+    # =================================================
+    st.divider()
+
+    st.subheader(
+        "🚨 Emergency AI Controls"
+    )
+
+    if st.session_state.ai_enabled:
+
+        st.success(
+            "AI Analysis System Active"
+        )
+
+        if st.button(
+            "DISABLE AI FOR ALL SESSIONS"
+        ):
+
+            st.session_state.ai_enabled = False
+
+            st.error(
+                "AI paused. All users reverted to manual mode."
+            )
+
+    else:
+
+        st.error(
+            "AI System Disabled"
+        )
+
+        if st.button(
+            "ENABLE AI"
+        ):
+
+            st.session_state.ai_enabled = True
+
+            st.success(
+                "AI System Reactivated"
+            )
