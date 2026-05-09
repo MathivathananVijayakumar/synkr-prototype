@@ -61,21 +61,22 @@ if "ai_enabled" not in st.session_state:
 # =================================================
 # HELPER FUNCTIONS
 # =================================================
-def detect_hallucination(feedback, insight):
+def detect_hallucination(text):
 
     hallucination_terms = [
         "always",
         "guaranteed",
         "100%",
-        "never fails"
+        "never fails",
+        "perfect",
+        "zero issues",
+        "completely solved"
     ]
 
-    combined = (
-        feedback + " " + insight
-    ).lower()
+    text = text.lower()
 
     return any(
-        term in combined
+        term in text
         for term in hallucination_terms
     )
 
@@ -112,7 +113,7 @@ if page == "🏠 Retro Analysis":
     retro_text = st.text_area(
         "Paste sprint retrospective feedback",
         height=220,
-        placeholder="One item per line"
+        placeholder="One feedback item per line"
     )
 
     if st.button("Analyze Feedback →"):
@@ -208,6 +209,9 @@ Feedback:
 
                     items = parsed["items"]
 
+                    # =====================================
+                    # SAVE CHAT HISTORY
+                    # =====================================
                     conn.table("chat_history").insert({
                         "role": "user",
                         "content": retro_text
@@ -237,6 +241,18 @@ Feedback:
                         confidence = item["confidence"]
                         insight = item["insight"]
 
+                        # =====================================
+                        # HALLUCINATION DETECTION
+                        # =====================================
+                        hallucination_flag = (
+                            detect_hallucination(
+                                feedback
+                            )
+                        )
+
+                        # =====================================
+                        # SAVE RETRO ANALYSIS
+                        # =====================================
                         conn.table(
                             "retro_analysis"
                         ).insert({
@@ -264,13 +280,9 @@ Feedback:
 
                         }).execute()
 
-                        hallucination_flag = (
-                            detect_hallucination(
-                                feedback,
-                                insight
-                            )
-                        )
-
+                        # =====================================
+                        # SAVE AI METRICS
+                        # =====================================
                         conn.table(
                             "ai_metrics"
                         ).insert({
@@ -297,7 +309,7 @@ Feedback:
                         )
 
                         # =====================================
-                        # SENSITIVE HR
+                        # SENSITIVE HR DETECTION
                         # =====================================
                         if (
                             st.session_state
@@ -414,6 +426,9 @@ Feedback:
                             ]
                         )
 
+                        # =====================================
+                        # UI DISPLAY
+                        # =====================================
                         with st.container(border=True):
 
                             if confidence >= 85:
@@ -470,16 +485,70 @@ Feedback:
 
                     error_message = str(e)
 
+                    # =====================================
+                    # SYNC FAILURE
+                    # =====================================
                     if "Connection" in error_message:
+
+                        conn.table(
+                            "guardrail_events"
+                        ).insert({
+
+                            "sprint_name":
+                            sprint_name,
+
+                            "team_name":
+                            team_name,
+
+                            "feedback":
+                            retro_text,
+
+                            "guardrail_type":
+                            "Sync Failure",
+
+                            "severity":
+                            "High",
+
+                            "reviewer_required":
+                            True
+
+                        }).execute()
 
                         st.error(
                             "🔄 Sync failure detected"
                         )
 
+                    # =====================================
+                    # API FAILURE
+                    # =====================================
                     elif (
                         "API" in error_message
                         or "429" in error_message
                     ):
+
+                        conn.table(
+                            "guardrail_events"
+                        ).insert({
+
+                            "sprint_name":
+                            sprint_name,
+
+                            "team_name":
+                            team_name,
+
+                            "feedback":
+                            retro_text,
+
+                            "guardrail_type":
+                            "API Failure",
+
+                            "severity":
+                            "High",
+
+                            "reviewer_required":
+                            True
+
+                        }).execute()
 
                         st.error(
                             "🚨 AI API failure detected"
@@ -543,6 +612,9 @@ if page == "📊 Team Dashboard":
 
         st.divider()
 
+        # =====================================
+        # SENTIMENT TRENDS
+        # =====================================
         st.subheader(
             "📈 Sprint Sentiment Trends"
         )
@@ -597,6 +669,9 @@ if page == "📊 Team Dashboard":
             width="stretch"
         )
 
+        # =====================================
+        # THEME DISTRIBUTION
+        # =====================================
         st.subheader(
             "📊 Theme Distribution"
         )
@@ -608,6 +683,9 @@ if page == "📊 Team Dashboard":
 
         st.bar_chart(theme_counts)
 
+        # =====================================
+        # RECENT FEEDBACK
+        # =====================================
         st.subheader(
             "📝 Recent Sprint Feedback"
         )
