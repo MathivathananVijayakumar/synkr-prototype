@@ -38,29 +38,20 @@ st.divider()
 # 3. THE INPUT BOX (Slide 8: Step 1 - Retro Submission)
 # Form resets after submit, keeping the dashboard ready for "another one" 
 with st.form("retro_input", clear_on_submit=True):
-    user_input = st.text_area("Add another retrospective comment:")
-    submitted = st.form_submit_button("Analyze & Save")
+    user_input = st.text_area("Paste your retro feedback here...") [cite: 414]
+    submitted = st.form_submit_button("Analyze Feedback →") [cite: 416]
 
     if submitted and user_input:
-        # Step 2: AI Processing using Groq [cite: 235, 236, 237]
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{
-                "role": "system", 
-                "content": "Analyze the sentiment (Positive, Neutral, Negative) and Theme. Return ONLY JSON."
-            }, {"role": "user", "content": user_input}],
-            response_format={"type": "json_object"}
-        )
+        # 1. AI Processing (Groq) logic goes here...
         
-        # Parse result and insert into Supabase [cite: 120, 121]
-        res = json.loads(response.choices[0].message.content)
-        
+        # 2. Insert into Supabase
         conn.table("retrospectives").insert({
             "content": user_input,
-            "sentiment": res.get("sentiment"),
-            "theme": res.get("theme"),
-            "risk_level": "Medium" 
+            "sentiment": ai_sentiment,
+            "theme": ai_theme,
+            "risk_level": ai_risk
         }).execute()
         
+        # 3. THE FIX: Update here
         st.success("Analysis complete! Updating dashboard...")
-        st.rerun() # Refresh the page to show the new summary at the top [cite: 240]
+        st.rerun()  # This triggers the refresh to show the new metrics [cite: 469]
