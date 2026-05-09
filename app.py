@@ -102,7 +102,7 @@ if "guardrails" not in st.session_state:
     }
 
 # =================================================
-# SIDEBAR
+# SIDEBAR NAVIGATION
 # =================================================
 page = st.sidebar.radio(
     "Navigation",
@@ -279,7 +279,7 @@ if page == "🏠 Retro Analysis":
                             theme = "General"
 
                             # -------------------------------------
-                            # AI THEME EXTRACTION
+                            # THEME EXTRACTION
                             # -------------------------------------
                             if "deploy" in item_lower:
 
@@ -706,7 +706,12 @@ if page == "📝 Feedback Survey":
 
     st.title("📝 Feedback Survey")
 
-    st.radio(
+    st.write(
+        "Help improve Synkr AI by rating "
+        "the quality of sprint insights."
+    )
+
+    theme_match = st.radio(
         "Did AI themes match discussions?",
         [
             "Yes",
@@ -715,23 +720,128 @@ if page == "📝 Feedback Survey":
         ]
     )
 
-    st.slider(
+    usefulness = st.slider(
         "Insight usefulness",
         1,
-        5
+        5,
+        3
     )
 
-    st.text_area(
+    missed_feedback = st.text_area(
         "What did AI miss?"
     )
 
-    if st.button(
-        "Submit Feedback"
-    ):
+    col1, col2 = st.columns(2)
 
-        st.success(
-            "Feedback Submitted"
-        )
+    with col1:
+
+        if st.button(
+            "Submit Feedback"
+        ):
+
+            try:
+
+                conn.table(
+                    "feedback_survey"
+                ).insert({
+
+                    "theme_match": theme_match,
+                    "usefulness": usefulness,
+                    "missed_feedback": missed_feedback
+
+                }).execute()
+
+                st.success(
+                    "✅ Feedback Submitted"
+                )
+
+            except Exception as e:
+
+                st.error(
+                    f"Survey Error: {e}"
+                )
+
+    with col2:
+
+        if st.button(
+            "View Survey Analytics"
+        ):
+
+            try:
+
+                rows = conn.table(
+                    "feedback_survey"
+                ).select("*").execute()
+
+                if rows.data:
+
+                    df = pd.DataFrame(
+                        rows.data
+                    )
+
+                    st.divider()
+
+                    st.subheader(
+                        "📊 Survey Analytics"
+                    )
+
+                    avg_usefulness = round(
+                        df["usefulness"].mean(),
+                        1
+                    )
+
+                    col1, col2 = st.columns(2)
+
+                    col1.metric(
+                        "Avg Usefulness",
+                        f"{avg_usefulness}/5"
+                    )
+
+                    yes_count = len(
+                        df[
+                            df["theme_match"]
+                            == "Yes"
+                        ]
+                    )
+
+                    col2.metric(
+                        "Positive AI Match",
+                        yes_count
+                    )
+
+                    st.subheader(
+                        "Theme Match Distribution"
+                    )
+
+                    match_counts = (
+                        df["theme_match"]
+                        .value_counts()
+                    )
+
+                    st.bar_chart(
+                        match_counts
+                    )
+
+                    st.subheader(
+                        "Recent User Feedback"
+                    )
+
+                    st.dataframe(
+                        df.tail(10),
+                        width="stretch"
+                    )
+
+                else:
+
+                    st.info(
+                        "No survey data available."
+                    )
+
+            except Exception as e:
+
+                st.error(
+                    f"Analytics Error: {e}"
+                )
 
 # =================================================
 # ADMIN DASHBOARD
