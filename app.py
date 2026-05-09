@@ -1,22 +1,21 @@
 import streamlit as st
-from st_supabase_connection import SupabaseConnection
 from groq import Groq
+from st_supabase_connection import SupabaseConnection
 import pandas as pd
-import json
 
 # -------------------------------------------------
 # PAGE CONFIG
 # -------------------------------------------------
 st.set_page_config(
-    page_title="Synkr - Team Health Dashboard",
-    page_icon="📊",
+    page_title="Synkr AI Assistant",
+    page_icon="🤖",
     layout="wide"
 )
 
-st.title("📊 Synkr: Team Health Dashboard")
+st.title("🤖 Synkr AI Assistant")
 
 # -------------------------------------------------
-# INITIALIZE CONNECTIONS
+# SUPABASE CONNECTION
 # -------------------------------------------------
 conn = st.connection(
     "supabase",
@@ -25,181 +24,153 @@ conn = st.connection(
     key=st.secrets["SUPABASE_KEY"]
 )
 
+# -------------------------------------------------
+# GROQ CLIENT
+# -------------------------------------------------
 client = Groq(
     api_key=st.secrets["GROQ_API_KEY"]
 )
 
 # -------------------------------------------------
-# LOAD DASHBOARD DATA
+# LOAD CHAT HISTORY FROM SUPABASE
 # -------------------------------------------------
-try:
+if "messages" not in st.session_state:
 
-    rows = conn.table("retrospectives").select("*").execute()
+    try:
 
-    if rows.data:
+        rows = conn.table("chat_history") \
+            .select("*") \
+            .order("id") \
+            .execute()
 
-        df = pd.DataFrame(rows.data)
+        if rows.data and len(rows.data) > 0:
 
-        st.subheader("📈 Team Sentiment Summary")
+            st.session_state.messages = [
+                {
+                    "role": row["role"],
+                    "content": row["content"]
+                }
+                for row in rows.data
+            ]
 
-        counts = df["sentiment"].value_counts(normalize=True) * 100
+        else:
 
-        col1, col2, col3 = st.columns(3)
+            st.session_state.messages = [
+                {
+                    "role": "assistant",
+                    "content": "Hi 👋 I'm Synkr AI. How can I help you today?"
+                }
+            ]
 
-        col1.metric(
-            "Positive",
-            f"{counts.get('Positive', 0):.0f}%"
-        )
+    except Exception as e:
 
-        col2.metric(
-            "Neutral",
-            f"{counts.get('Neutral', 0):.0f}%"
-        )
+        st.error(f"Error loading chat history: {e}")
 
-        col3.metric(
-            "Negative",
-            f"{counts.get('Negative', 0):.0f}%"
-        )
-
-        st.divider()
-
-        st.subheader("📝 Recent Feedback")
-
-        st.dataframe(
-            df[
-                [
-                    "content",
-                    "sentiment",
-                    "theme",
-                    "risk_level"
-                ]
-            ].tail(10),
-            use_container_width=True
-        )
-
-    else:
-        st.info("No retrospective feedback found yet.")
-
-except Exception as e:
-    st.error(f"Error loading dashboard data: {e}")
+        st.session_state.messages = [
+            {
+                "role": "assistant",
+                "content": "Hi 👋 I'm Synkr AI."
+            }
+        ]
 
 # -------------------------------------------------
-# INPUT SECTION
+# DISPLAY CHAT HISTORY
 # -------------------------------------------------
-st.divider()
+for message in st.session_state.messages:
 
-st.subheader("Submit Retro Feedback")
+    with st.chat_message(message["role"]):
 
-with st.form("retro_input", clear_on_submit=True):
+        st.markdown(message["content"])
 
-    user_input = st.text_area(
-        "Paste your retro feedback here...",
-        height=180
-    )
+# -------------------------------------------------
+# USER INPUT
+# -------------------------------------------------
+prompt = st.chat_input("Type your message...")
 
-    submitted = st.form_submit_button(
-        "Analyze Feedback →"
-    )
+if prompt:
 
-    # -------------------------------------------------
-    # PROCESS INPUT
-    # -------------------------------------------------
-    if submitted and user_input:
+    # ---------------------------------------------
+    # USER MESSAGE
+    # ---------------------------------------------
+    user_message = {
+        "role": "user",
+        "content": prompt
+    }
 
-        try:
+    st.session_state.messages.append(user_message)
 
-            with st.spinner("🤖 AI is analyzing feedback..."):
+    # SAVE USER MESSAGE TO SUPABASE
+    conn.table("chat_history").insert({
+        "role": "user",
+        "content": prompt
+    }).execute()
 
-                prompt = f"""
-                Analyze the following retrospective feedback.
+    # DISPLAY USER MESSAGE
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-                Return ONLY valid JSON.
+    # ---------------------------------------------
+    # AI RESPONSE
+    # ---------------------------------------------
+    with st.chat_message("assistant"):
 
-                Example:
-                {{
-                  "sentiment": "Positive",
-                  "theme": "Communication",
-                  "risk_level": "Low"
-                }}
+        with st.spinner("Thinking..."):
 
-                Feedback:
-                {user_input}
-                """
+            try:
 
                 completion = client.chat.completions.create(
                     model="llama-3.1-8b-instant",
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ],
-                    temperature=0.2
+                    messages=st.session_state.messages,
+                    temperature=0.7,
+                    max_tokens=1024
                 )
 
-                response_text = completion.choices[0].message.content
+                response = completion.choices[0].message.content
 
-                # CLEAN RESPONSE
-                response_text = response_text.strip()
+                st.markdown(response)
 
-                # PARSE JSON
-                ai_response = json.loads(response_text)
+                assistant_message = {
+                    "role": "assistant",
+                    "content": response
+                }
 
-                ai_sentiment = ai_response.get(
-                    "sentiment",
-                    "Neutral"
+                st.session_state.messages.append(
+                    assistant_message
                 )
 
-                ai_theme = ai_response.get(
-                    "theme",
-                    "General"
-                )
+                # SAVE AI RESPONSE TO SUPABASE
+                conn.table("chat_history").insert({
+                    "role": "assistant",
+                    "content": response
+                }).execute()
 
-                ai_risk = ai_response.get(
-                    "risk_level",
-                    "Low"
-                )
+            except Exception as e:
 
-            # -------------------------------------------------
-            # SHOW RESULTS TO USER
-            # -------------------------------------------------
-            st.success("✅ Analysis Complete")
+                st.error(f"Error: {e}")
 
-            result_col1, result_col2, result_col3 = st.columns(3)
+# -------------------------------------------------
+# CLEAR CHAT BUTTON
+# -------------------------------------------------
+st.divider()
 
-            result_col1.metric(
-                "Sentiment",
-                ai_sentiment
-            )
+if st.button("🗑 Clear Chat History"):
 
-            result_col2.metric(
-                "Theme",
-                ai_theme
-            )
+    try:
 
-            result_col3.metric(
-                "Risk Level",
-                ai_risk
-            )
+        conn.table("chat_history") \
+            .delete() \
+            .neq("id", 0) \
+            .execute()
 
-            # -------------------------------------------------
-            # SAVE TO SUPABASE
-            # -------------------------------------------------
-            conn.table("retrospectives").insert({
-                "content": user_input,
-                "sentiment": ai_sentiment,
-                "theme": ai_theme,
-                "risk_level": ai_risk
-            }).execute()
+        st.session_state.messages = [
+            {
+                "role": "assistant",
+                "content": "Chat history cleared 👋"
+            }
+        ]
 
-            st.info("📦 Feedback saved to dashboard.")
+        st.rerun()
 
-        except json.JSONDecodeError:
-            st.error(
-                "AI returned invalid JSON response."
-            )
+    except Exception as e:
 
-        except Exception as e:
-            st.error(
-                f"Error analyzing feedback: {e}"
-            )
+        st.error(f"Error clearing chat: {e}")
